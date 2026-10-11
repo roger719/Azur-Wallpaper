@@ -1,0 +1,295 @@
+<!doctype html>
+<html style="background: transparent !important; margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden">
+<head>
+    <meta charset="UTF-8" />
+    <script src="lib/live2dcubismcore.min.js"></script>
+    <script src="lib/pixi.min.js"></script>
+    <script src="lib/cubism4.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; border: none; box-sizing: border-box; }
+        html, body {
+            background: transparent !important;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-position: center;
+            background-size: cover;
+            background-repeat: no-repeat;
+        }
+        #stage { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: transparent !important; }
+        canvas { display: block; width: 100%; height: 100%; background: transparent !important; }
+    </style>
+</head>
+<body style="background: transparent !important;">
+    <div id="stage"></div>
+    <script>
+        let app = null;
+        let model = null;
+        let loadToken = 0;
+        let pendingModelPath = null;
+        let currentLoadedPath = null;
+        let currentExpression = "";
+
+        let customScale = 1.0;
+        let customOffsetX = 0.0;
+        let customOffsetY = 0.0;
+
+        function setCustomScale(scale) {
+            if (typeof scale === "number" && !isNaN(scale) && scale > 0) {
+                customScale = scale;
+                fitModel();
+            }
+        }
+
+        function setCustomOffset(offsetX, offsetY) {
+            if (typeof offsetX === "number" && typeof offsetY === "number") {
+                customOffsetX = offsetX;
+                customOffsetY = offsetY;
+                fitModel();
+            }
+        }
+
+        function setExpression(expName) {
+            if (!expName) return;
+            currentExpression = expName;
+            if (!model) return;
+            try {
+                model.expression(expName);
+            } catch (e) {
+                console.error("Expression error:", expName, e);
+            }
+        }
+
+        function setCustomBackground(type, value, scale, offsetX, offsetY) {
+            const body = document.body;
+            if (!body) return;
+
+            if (type === "COLOR" && value) {
+                body.style.backgroundImage = "none";
+                body.style.backgroundColor = value;
+            } else if (type === "IMAGE" && value) {
+                body.style.backgroundColor = "transparent";
+                body.style.backgroundImage = `url("${value}")`;
+                const s = scale || 1.0;
+                const ox = offsetX || 0;
+                const oy = offsetY || 0;
+                body.style.backgroundPosition = `calc(50% + ${ox}px) calc(50% + ${oy}px)`;
+                body.style.backgroundSize = `${s * 100}% ${s * 100}%`;
+                body.style.backgroundRepeat = "no-repeat";
+            } else {
+                body.style.backgroundImage = "none";
+                body.style.backgroundColor = "transparent";
+            }
+        }
+
+        function setPointerPosition(x, y) {
+            if (!model || !app) return;
+            try {
+                model.focus(x, y);
+            } catch (e) {
+                console.error("Focus error:", e);
+            }
+        }
+
+        function loadModelFromAndroid(jsonPath) {
+            if (!jsonPath) return;
+            if (!jsonPath.startsWith("file://") && !jsonPath.startsWith("http")) {
+                jsonPath = "file://" + jsonPath;
+            }
+            if (jsonPath === currentLoadedPath && model) {
+                if (currentExpression) {
+                    setExpression(currentExpression);
+                }
+                return;
+            }
+            currentLoadedPath = jsonPath;
+            if (!app) {
+                pendingModelPath = jsonPath;
+                return;
+            }
+            loadModel(jsonPath);
+        }
+
+        window.setCustomScale = setCustomScale;
+        window.setCustomOffset = setCustomOffset;
+        window.setExpression = setExpression;
+        window.setCustomBackground = setCustomBackground;
+        window.setPointerPosition = setPointerPosition;
+        window.loadModelFromAndroid = loadModelFromAndroid;
+
+        const GROUP = "";
+        const IDLE_GROUP = "__idle__";
+        let actionIndex = -1;
+
+        function motionName(def) {
+            if (!def) return "";
+            const file = (def.File || def.file || "").split("/").pop();
+            return file.replace(/(\.anim)?\.motion3\.json$/i, "");
+        }
+
+        function setupMotions(m) {
+            try {
+                const mm = m.internalModel.motionManager;
+                if (!mm || !mm.definitions) return;
+
+                const defs = mm.definitions[GROUP] || mm.definitions["Idle"] || [];
+                const idleDef = defs.find(d => motionName(d).toLowerCase().includes("idle"));
+                actionIndex = defs.findIndex(d => motionName(d).toLowerCase().includes("action") || motionName(d).toLowerCase().includes("touch"));
+
+                if (idleDef) {
+                    mm.definitions[IDLE_GROUP] = [idleDef];
+                    mm.motionGroups[IDLE_GROUP] = [undefined];
+                    mm.groups.idle = IDLE_GROUP;
+                    m.motion(IDLE_GROUP, 0, 1);
+                }
+            } catch (e) {
+                console.error("Motions setup error:", e);
+            }
+        }
+
+        async function loadModel(path) {
+            const token = ++loadToken;
+            let newModel;
+            try {
+                // autoInteract = false pour empêcher le changement d'expression sauvage au clic
+                newModel = await PIXI.live2d.Live2DModel.from(path, { autoInteract: false });
+            } catch (e) {
+                console.error("Erreur de chargement du modèle Live2D :", path, e);
+                return false;
+            }
+            if (token !== loadToken) {
+                newModel.destroy();
+                return false;
+            }
+
+            if (model) {
+                app.stage.removeChild(model);
+                model.destroy();
+            }
+            model = newModel;
+            app.stage.addChild(model);
+
+            fitModel();
+            setupMotions(model);
+
+            if (currentExpression) {
+                setExpression(currentExpression);
+            }
+
+            if (app.renderer) app.renderer.render(app.stage);
+            return true;
+        }
+
+        function fitModel() {
+            if (!model || !app) return;
+
+            const screenW = app.renderer.screen.width;
+            const screenH = app.renderer.screen.height;
+            if (screenW <= 0 || screenH <= 0) return;
+
+            const nativeW = (model.internalModel && model.internalModel.width) ? model.internalModel.width : (model.width / model.scale.x);
+            const nativeH = (model.internalModel && model.internalModel.height) ? model.internalModel.height : (model.height / model.scale.y);
+
+            if (!nativeW || !nativeH || nativeW <= 0 || nativeH <= 0) return;
+
+            model.anchor.set(0.5, 0.5);
+
+            const baseScale = Math.min(screenW / nativeW, screenH / nativeH) * 0.85;
+            const finalScale = baseScale * customScale;
+
+            model.scale.set(finalScale);
+
+            const worldToScreenX = screenW / 800.0;
+            const worldToScreenY = screenH / 1280.0;
+
+            model.x = (screenW / 2) + (customOffsetX * worldToScreenX);
+            model.y = (screenH / 2) - (customOffsetY * worldToScreenY);
+
+            if (app.renderer) {
+                app.renderer.render(app.stage);
+            }
+        }
+
+        function playActionAnimation() {
+            if (!model) return;
+            try {
+                const mm = model.internalModel.motionManager;
+                if (!mm || !mm.definitions) return;
+
+                if (actionIndex >= 0) {
+                    model.motion(GROUP, actionIndex, 3);
+                } else {
+                    const keys = Object.keys(mm.definitions);
+                    const touchKey = keys.find(k => k.toLowerCase().includes("touch") || k.toLowerCase().includes("tap") || k.toLowerCase().includes("action")) || keys[0];
+                    if (touchKey) {
+                        model.motion(touchKey, 0, 3);
+                    }
+                }
+            } catch (e) {
+                console.error("Play action error:", e);
+            }
+        }
+
+        function playNamedAnimation(animName) {
+            if (!model || !animName) return;
+            try {
+                const mm = model.internalModel.motionManager;
+                if (!mm || !mm.definitions) return;
+
+                const target = animName.trim().toLowerCase();
+
+                for (const groupKey of Object.keys(mm.definitions)) {
+                    if (groupKey.toLowerCase() === target) {
+                        model.motion(groupKey, 0, 3);
+                        return;
+                    }
+                }
+
+                for (const [groupKey, defs] of Object.entries(mm.definitions)) {
+                    if (Array.isArray(defs)) {
+                        for (let i = 0; i < defs.length; i++) {
+                            const name = motionName(defs[i]).toLowerCase();
+                            if (name && (name.includes(target) || target.includes(name))) {
+                                model.motion(groupKey, i, 3);
+                                return;
+                            }
+                        }
+                    }
+                }
+
+                model.motion(animName, 0, 3);
+            } catch (e) {
+                console.error("Play named motion error:", animName, e);
+                playActionAnimation();
+            }
+        }
+
+        window.playActionAnimation = playActionAnimation;
+        window.playNamedAnimation = playNamedAnimation;
+
+        async function init() {
+            const stage = document.getElementById("stage");
+            app = new PIXI.Application({
+                width: window.innerWidth || 800,
+                height: window.innerHeight || 1280,
+                transparent: true,
+                backgroundAlpha: 0,
+                clearBeforeRender: true,
+                antialias: true,
+                autoDensity: true,
+                resolution: window.devicePixelRatio || 1,
+                sharedTicker: true
+            });
+            if (app.renderer && app.renderer.background) {
+                app.renderer.background.alpha = 0;
+            }
+            stage.appendChild(app.view);
+            if (pendingModelPath) {
+                loadModel(pendingModelPath);
+                pendingModelPath = null;
+            }
+        }
+        window.onload = init;
+    </script>
+</body>
+</html>
