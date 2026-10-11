@@ -1,1 +1,1 @@
-# Waifu-Engine
+Azur Wallpaper is an application that allows you to use live2d files as wallpapers, which can be extracted from various mobile games (or not) using this technology. The application integrates various features to customize wallpapers, and also allows you to program the change of wallpaper according to the date or time.
