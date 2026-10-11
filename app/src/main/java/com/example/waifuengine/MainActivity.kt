@@ -43,10 +43,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -56,8 +63,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -78,6 +87,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
 @Composable
 fun TopLevelAnimatedVisibility(
@@ -246,7 +258,7 @@ fun RagebaitButton(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun CustomizationScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
@@ -379,7 +391,38 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
     var pickedColor by remember { mutableStateOf(Color(prefs.bgColor)) }
 
-    // Onglet actif (0 = personnage, 1 = fond, 2 = planification)
+    // State Horloge Numérique & Date
+    var isClockEnabled by remember { mutableStateOf(prefs.isClockEnabled) }
+    var clockFont by remember { mutableStateOf(prefs.clockFont) }
+    var clockColor by remember { mutableIntStateOf(prefs.clockColor) }
+    var clockSize by remember { mutableFloatStateOf(prefs.clockSize) }
+    var clockFormat24h by remember { mutableStateOf(prefs.clockFormat24h) }
+    var clockShowSeconds by remember { mutableStateOf(prefs.clockShowSeconds) }
+    var isDateEnabled by remember { mutableStateOf(prefs.isDateEnabled) }
+    var dateFormat by remember { mutableStateOf(prefs.dateFormat) }
+    var clockPosition by remember { mutableStateOf(prefs.clockPosition) }
+    var clockOffsetX by remember { mutableFloatStateOf(prefs.clockOffsetX) }
+    var clockOffsetY by remember { mutableFloatStateOf(prefs.clockOffsetY) }
+
+    var showFontDialog by remember { mutableStateOf(false) }
+    var showColorDialog by remember { mutableStateOf(false) }
+    var showBgMediaPickerDialog by remember { mutableStateOf(false) }
+
+    val currentClockX by rememberUpdatedState(clockOffsetX)
+    val currentClockY by rememberUpdatedState(clockOffsetY)
+
+    val onClockDrag: (Float, Float) -> Unit = remember {
+        { dx, dy ->
+            val clampedX = (currentClockX + dx).coerceIn(-600f, 600f)
+            val clampedY = (currentClockY + dy).coerceIn(-1200f, 1200f)
+            clockOffsetX = clampedX
+            clockOffsetY = clampedY
+            prefs.clockOffsetX = clampedX
+            prefs.clockOffsetY = clampedY
+        }
+    }
+
+    // Onglet actif (0 = personnage, 1 = personnalisation, 2 = planification)
     var activeTab by remember { mutableIntStateOf(prefs.activeTab.coerceIn(0, 2)) }
     var isFullscreen by remember { mutableStateOf(false) }
     var isFullscreenLoading by remember { mutableStateOf(false) }
@@ -603,6 +646,48 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
         }
     }
 
+    val mediaPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                clearOldBgFiles()
+                val mimeType = context.contentResolver.getType(uri) ?: ""
+                val uriStr = uri.toString().lowercase()
+                val isVideo = mimeType.startsWith("video/") || uriStr.endsWith(".mp4") || uriStr.endsWith(".mkv") || uriStr.endsWith(".webm")
+
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val fileName = if (isVideo) "custom_bg.mp4" else "custom_bg.jpg"
+                val destFile = File(context.filesDir, fileName)
+
+                inputStream?.use { input ->
+                    destFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+
+                if (isVideo) {
+                    prefs.bgVideoPath = destFile.absolutePath
+                    prefs.bgImagePath = ""
+                    prefs.bgType = WaifuPreferences.TYPE_VIDEO
+                    bgType = WaifuPreferences.TYPE_VIDEO
+                    Toast.makeText(context, "Vidéo de fond appliquée !", Toast.LENGTH_SHORT).show()
+                } else {
+                    prefs.bgImagePath = destFile.absolutePath
+                    prefs.bgVideoPath = ""
+                    prefs.bgType = WaifuPreferences.TYPE_IMAGE
+                    bgType = WaifuPreferences.TYPE_IMAGE
+                    Toast.makeText(context, "Image de fond appliquée !", Toast.LENGTH_SHORT).show()
+                }
+                prefs.bgScale = 1.0f
+                prefs.bgOffsetX = 0f
+                prefs.bgOffsetY = 0f
+            } catch (_: Exception) {
+                Toast.makeText(context, "Erreur lors du chargement du fichier", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     val musicPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -734,7 +819,18 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                 bgOffsetY = prefs.bgOffsetY,
                                 musicPath = prefs.musicPath,
                                 isMusicEnabled = prefs.isMusicEnabled,
-                                musicVolume = prefs.musicVolume
+                                musicVolume = prefs.musicVolume,
+                                isClockEnabled = isClockEnabled,
+                                clockFont = clockFont,
+                                clockColor = clockColor,
+                                clockSize = clockSize,
+                                clockFormat24h = clockFormat24h,
+                                clockShowSeconds = clockShowSeconds,
+                                isDateEnabled = isDateEnabled,
+                                dateFormat = dateFormat,
+                                clockPosition = clockPosition,
+                                clockOffsetX = clockOffsetX,
+                                clockOffsetY = clockOffsetY
                             )
                             prefs.savePreset(newPreset)
                             userPresets = prefs.getPresets()
@@ -1251,6 +1347,401 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
         )
     }
 
+    // --- DIALOGUE SÉLECTION FOND IMAGE OU VIDÉO ---
+    if (showBgMediaPickerDialog) {
+        AlertDialog(
+            onDismissRequest = { showBgMediaPickerDialog = false },
+            containerColor = nothingSurface,
+            shape = RoundedCornerShape(24.dp),
+            title = { Text("FOND IMAGE OU VIDÉO", fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary) },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            showBgMediaPickerDialog = false
+                            imagePickerLauncher.launch("image/*")
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Choisir une Image", color = Color.White, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = {
+                            showBgMediaPickerDialog = false
+                            videoPickerLauncher.launch("video/*")
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Choisir une Vidéo", color = Color.White, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    }
+
+                    if (bgType != WaifuPreferences.TYPE_NONE) {
+                        OutlinedButton(
+                            onClick = {
+                                clearOldBgFiles()
+                                bgType = WaifuPreferences.TYPE_NONE
+                                prefs.bgType = WaifuPreferences.TYPE_NONE
+                                showBgMediaPickerDialog = false
+                                Toast.makeText(context, "Fond réinitialisé !", Toast.LENGTH_SHORT).show()
+                            },
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, nothingBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Effacer le fond médias", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = nothingTextPrimary, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showBgMediaPickerDialog = false }) {
+                    Text("ANNULER", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
+                }
+            }
+        )
+    }
+
+    // --- DIALOGUE CHOIX DE POLICE DE CARACTÈRES (THÈME CLAIR) ---
+    if (showFontDialog) {
+        Dialog(onDismissRequest = { showFontDialog = false }) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = nothingSurface,
+                border = BorderStroke(1.dp, nothingBorder),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "CHANGER LA POLICE",
+                            fontSize = 13.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = nothingTextPrimary
+                        )
+                        IconButton(onClick = { showFontDialog = false }, modifier = Modifier.size(28.dp)) {
+                            Text("✕", fontSize = 16.sp, color = nothingTextPrimary, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    HorizontalDivider(color = nothingBorder)
+
+                    val fontsList = remember {
+                        listOf(
+                            WaifuPreferences.FONT_MONOSPACE to "Digital (Monospace)",
+                            WaifuPreferences.FONT_SANS_SERIF to "Sans-Serif",
+                            WaifuPreferences.FONT_SERIF to "Serif",
+                            WaifuPreferences.FONT_THIN to "Thin (Fine)",
+                            WaifuPreferences.FONT_CONDENSED to "Condensed",
+                            WaifuPreferences.FONT_CURSIVE to "Cursive",
+                            WaifuPreferences.FONT_CASUAL to "Casual"
+                        )
+                    }
+
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        fontsList.forEach { (fontKey, fontLabel) ->
+                            val isSelected = clockFont == fontKey
+                            Surface(
+                                onClick = {
+                                    clockFont = fontKey
+                                    prefs.clockFont = fontKey
+                                    showFontDialog = false
+                                },
+                                shape = RoundedCornerShape(14.dp),
+                                color = if (isSelected) nothingBlack else Color(0xFFEDF4FC),
+                                border = BorderStroke(1.dp, nothingBorder),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = fontLabel,
+                                        fontSize = 12.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) Color.White else nothingTextPrimary
+                                    )
+                                    Text(
+                                        text = "11:01",
+                                        fontSize = 18.sp,
+                                        fontFamily = when (fontKey) {
+                                            WaifuPreferences.FONT_MONOSPACE -> FontFamily.Monospace
+                                            WaifuPreferences.FONT_SERIF -> FontFamily.Serif
+                                            WaifuPreferences.FONT_SANS_SERIF -> FontFamily.SansSerif
+                                            WaifuPreferences.FONT_THIN -> FontFamily.SansSerif
+                                            WaifuPreferences.FONT_CONDENSED -> FontFamily.SansSerif
+                                            WaifuPreferences.FONT_CURSIVE -> FontFamily.Cursive
+                                            WaifuPreferences.FONT_CASUAL -> FontFamily.Default
+                                            else -> FontFamily.Monospace
+                                        },
+                                        fontWeight = when (fontKey) {
+                                            WaifuPreferences.FONT_THIN -> FontWeight.Thin
+                                            WaifuPreferences.FONT_CONDENSED -> FontWeight.Medium
+                                            WaifuPreferences.FONT_CURSIVE -> FontWeight.Normal
+                                            else -> FontWeight.Bold
+                                        },
+                                        color = if (isSelected) Color.White else nothingTextPrimary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // --- DIALOGUE PERSONNALISER LES COULEURS (THÈME CLAIR CONFORME À LA DA) ---
+    if (showColorDialog) {
+        var hsvHue by remember {
+            val hsv = FloatArray(3)
+            AndroidColor.colorToHSV(clockColor, hsv)
+            mutableFloatStateOf(hsv[0])
+        }
+        var hsvSat by remember {
+            val hsv = FloatArray(3)
+            AndroidColor.colorToHSV(clockColor, hsv)
+            mutableFloatStateOf(hsv[1])
+        }
+        var hsvVal by remember {
+            val hsv = FloatArray(3)
+            AndroidColor.colorToHSV(clockColor, hsv)
+            mutableFloatStateOf(hsv[2])
+        }
+
+        val currentHsvColor = remember(hsvHue, hsvSat, hsvVal) {
+            AndroidColor.HSVToColor(floatArrayOf(hsvHue, hsvSat, hsvVal))
+        }
+
+        val hueActiveColor = remember(hsvHue) {
+            Color(AndroidColor.HSVToColor(floatArrayOf(hsvHue, 1f, 1f)))
+        }
+
+        val currentSelectedColor = remember(currentHsvColor) {
+            Color(currentHsvColor)
+        }
+
+        @OptIn(ExperimentalMaterial3Api::class)
+        val createColorThumb: @Composable (Color) -> @Composable (SliderState) -> Unit = { activeDotColor ->
+            {
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                        .border(1.5.dp, nothingBorder, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .clip(CircleShape)
+                            .background(activeDotColor)
+                    )
+                }
+            }
+        }
+
+        Dialog(onDismissRequest = { showColorDialog = false }) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = nothingSurface,
+                border = BorderStroke(1.dp, nothingBorder),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        IconButton(
+                            onClick = { showColorDialog = false },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Text("✕", fontSize = 18.sp, color = nothingTextPrimary, fontWeight = FontWeight.Bold)
+                        }
+                        Text(
+                            text = "PERSONNALISER LES COULEURS",
+                            fontSize = 13.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = nothingTextPrimary
+                        )
+                    }
+
+                    HorizontalDivider(color = nothingBorder)
+
+                    // 1. TEINTE (Hue Rainbow)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("TEINTE", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextSecondary)
+
+                        val rainbowBrush = remember {
+                            Brush.horizontalGradient(
+                                colors = listOf(
+                                    Color.Red, Color.Yellow, Color.Green,
+                                    Color.Cyan, Color.Blue, Color.Magenta, Color.Red
+                                )
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(26.dp)
+                                .clip(RoundedCornerShape(13.dp))
+                                .background(rainbowBrush)
+                        ) {
+                            Slider(
+                                value = hsvHue,
+                                onValueChange = { hsvHue = it },
+                                valueRange = 0f..360f,
+                                thumb = createColorThumb(hueActiveColor),
+                                colors = SliderDefaults.colors(
+                                    activeTrackColor = Color.Transparent,
+                                    inactiveTrackColor = Color.Transparent
+                                ),
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+
+                    // 2. SATURATION
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("SATURATION", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextSecondary)
+
+                        val satBrush = remember(hsvHue, hsvVal) {
+                            val cMin = Color(AndroidColor.HSVToColor(floatArrayOf(hsvHue, 0f, hsvVal)))
+                            val cMax = Color(AndroidColor.HSVToColor(floatArrayOf(hsvHue, 1f, hsvVal)))
+                            Brush.horizontalGradient(listOf(cMin, cMax))
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(26.dp)
+                                .clip(RoundedCornerShape(13.dp))
+                                .background(satBrush)
+                        ) {
+                            Slider(
+                                value = hsvSat,
+                                onValueChange = { hsvSat = it },
+                                valueRange = 0f..1f,
+                                thumb = createColorThumb(currentSelectedColor),
+                                colors = SliderDefaults.colors(
+                                    activeTrackColor = Color.Transparent,
+                                    inactiveTrackColor = Color.Transparent
+                                ),
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+
+                    // 3. CLARTÉ
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("CLARTÉ", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextSecondary)
+
+                        val valBrush = remember(hsvHue, hsvSat) {
+                            val cMin = Color.Black
+                            val cMax = Color(AndroidColor.HSVToColor(floatArrayOf(hsvHue, hsvSat, 1f)))
+                            Brush.horizontalGradient(listOf(cMin, cMax))
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(26.dp)
+                                .clip(RoundedCornerShape(13.dp))
+                                .background(valBrush)
+                        ) {
+                            Slider(
+                                value = hsvVal,
+                                onValueChange = { hsvVal = it },
+                                valueRange = 0f..1f,
+                                thumb = createColorThumb(currentSelectedColor),
+                                colors = SliderDefaults.colors(
+                                    activeTrackColor = Color.Transparent,
+                                    inactiveTrackColor = Color.Transparent
+                                ),
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(currentHsvColor))
+                                    .border(1.5.dp, nothingBorder, CircleShape)
+                            )
+                            Text(
+                                text = String.format("#%06X", 0xFFFFFF and currentHsvColor),
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = nothingTextPrimary
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                clockColor = currentHsvColor
+                                prefs.clockColor = currentHsvColor
+                                showColorDialog = false
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = nothingBlack, contentColor = Color.White),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Text("APPLIQUER", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // CONTENEUR RACINE
     Box(modifier = modifier.fillMaxSize()) {
         // COUCHE 1 : ÉCRAN PRINCIPAL D'ÉDITION & APERÇU DANS LA CARTE
@@ -1288,6 +1779,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     .height(380.dp)
                     .padding(horizontal = 16.dp)
                     .clip(RoundedCornerShape(28.dp))
+                    .clipToBounds()
                     .then(customBgModifier)
                     .border(1.dp, nothingBorder, RoundedCornerShape(28.dp))
                     .then(live2DGestureModifier)
@@ -1350,16 +1842,58 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                 }
 
                 // RENDU DU MODÈLE EN APERÇU CARTE
-                key(isFullscreen) {
+                key(isFullscreen, clockPosition) {
                     if (!isFullscreen) {
-                        Live2DWebView(
-                            modelJsonPath = currentSkelPath,
-                            scale = currentScale,
-                            offsetX = currentOffsetX,
-                            offsetY = currentOffsetY,
-                            doubleTapTrigger = doubleTapTrigger,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(28.dp))
+                                .clipToBounds()
+                        ) {
+                            if (clockPosition == WaifuPreferences.CLOCK_POS_BACK) {
+                                DigitalClockOverlay(
+                                    isClockEnabled = isClockEnabled,
+                                    clockFont = clockFont,
+                                    clockColor = clockColor,
+                                    clockSizeSp = clockSize,
+                                    clockFormat24h = clockFormat24h,
+                                    clockShowSeconds = clockShowSeconds,
+                                    isDateEnabled = isDateEnabled,
+                                    dateFormat = dateFormat,
+                                    clockOffsetXPx = clockOffsetX,
+                                    clockOffsetYPx = clockOffsetY,
+                                    onPositionDrag = onClockDrag
+                                )
+                            }
+
+                            Live2DWebView(
+                                modelJsonPath = currentSkelPath,
+                                scale = currentScale,
+                                offsetX = currentOffsetX,
+                                offsetY = currentOffsetY,
+                                doubleTapTrigger = doubleTapTrigger,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(28.dp))
+                                    .clipToBounds()
+                            )
+
+                            if (clockPosition == WaifuPreferences.CLOCK_POS_FRONT) {
+                                DigitalClockOverlay(
+                                    isClockEnabled = isClockEnabled,
+                                    clockFont = clockFont,
+                                    clockColor = clockColor,
+                                    clockSizeSp = clockSize,
+                                    clockFormat24h = clockFormat24h,
+                                    clockShowSeconds = clockShowSeconds,
+                                    isDateEnabled = isDateEnabled,
+                                    dateFormat = dateFormat,
+                                    clockOffsetXPx = clockOffsetX,
+                                    clockOffsetYPx = clockOffsetY,
+                                    onPositionDrag = onClockDrag
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -1437,106 +1971,26 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // CARTE "présets" DÉFILANTE
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                colors = CardDefaults.cardColors(containerColor = nothingSurface),
-                shape = RoundedCornerShape(24.dp),
-                border = BorderStroke(1.dp, nothingBorder)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp)
-                ) {
-                    Text(
-                        text = "présets",
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        color = nothingTextSecondary
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    if (userPresets.isEmpty()) {
-                        Text(
-                            text = "Aucun préset enregistré. Cliquez sur sauvegarder pour créer votre premier préset !",
-                            fontSize = 10.sp,
-                            color = nothingTextSecondary
-                        )
-                    } else {
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(userPresets) { preset ->
-                                Surface(
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = Color(0xFFD2E3F5),
-                                    border = BorderStroke(1.dp, nothingBorder),
-                                    modifier = Modifier.combinedClickable(
-                                        onClick = {
-                                            currentSkelPath = preset.skelPath
-                                            currentScale = preset.scale
-                                            currentOffsetX = preset.offsetX
-                                            currentOffsetY = preset.offsetY
-
-                                            bgType = preset.bgType
-                                            pickedColor = Color(preset.bgColor)
-
-                                            musicPath = preset.musicPath
-                                            isMusicEnabled = preset.isMusicEnabled
-                                            musicVolume = preset.musicVolume
-
-                                            val charMatch = allCharacters.firstOrNull { it.name == preset.selectedCharacterName }
-                                            if (charMatch != null) {
-                                                updateSelectedCharacterAndVariant(charMatch)
-                                                val varMatch = charMatch.variants.firstOrNull { it.label == preset.selectedVariantLabel } ?: charMatch.variants.firstOrNull()
-                                                selectedVariant = varMatch
-                                            }
-
-                                            Toast.makeText(context, "Préset '${preset.name}' appliqué !", Toast.LENGTH_SHORT).show()
-                                        },
-                                        onLongClick = {
-                                            presetToDelete = preset
-                                            showDeletePresetDialog = true
-                                        }
-                                    )
-                                ) {
-                                    Text(
-                                        text = preset.name,
-                                        fontSize = 11.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = FontWeight.Bold,
-                                        color = nothingTextPrimary,
-                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
             Spacer(modifier = Modifier.height(10.dp))
 
-            // CARTE PRINCIPALE ENGLOBANT LES ONGLETS ET LEUR CONTENU
+            // CARTE PRINCIPALE UNIFIÉE (STYLE SCHÉMATISÉ EXACTEMENT COMME LE DESSIN)
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
                 colors = CardDefaults.cardColors(containerColor = nothingSurface),
-                shape = RoundedCornerShape(24.dp),
-                border = BorderStroke(1.dp, nothingBorder)
+                shape = RoundedCornerShape(28.dp),
+                border = BorderStroke(1.2.dp, nothingBorder)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(14.dp)
                 ) {
-                    val tab0Text by animateColorAsState(if (activeTab == 0) Color.White else nothingTextSecondary, animationSpec = tween(160), label = "tab0Text")
-                    val tab1Text by animateColorAsState(if (activeTab == 1) Color.White else nothingTextSecondary, animationSpec = tween(160), label = "tab1Text")
-                    val tab2Text by animateColorAsState(if (activeTab == 2) Color.White else nothingTextSecondary, animationSpec = tween(160), label = "tab2Text")
+                    val tab0Color by animateColorAsState(if (activeTab == 0) Color.White else Color(0xFF222222), animationSpec = tween(160), label = "tab0Color")
+                    val tab1Color by animateColorAsState(if (activeTab == 1) Color.White else Color(0xFF222222), animationSpec = tween(160), label = "tab1Color")
+                    val tab2Color by animateColorAsState(if (activeTab == 2) Color.White else Color(0xFF222222), animationSpec = tween(160), label = "tab2Color")
+                    val tab3Color by animateColorAsState(if (activeTab == 3) Color.White else Color(0xFF222222), animationSpec = tween(160), label = "tab3Color")
 
                     var barWidthDp by remember { mutableStateOf(0.dp) }
                     val density = LocalDensity.current
@@ -1548,56 +2002,30 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                         label = "tabIndicatorPosition"
                     )
 
-                    // Tab Bar Segmentée
+                    // PISTE INTÉRIEURE DES ONGLETS (CADRE ARRONDI CONFORME AU SCHÉMA)
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(48.dp)
+                            .height(52.dp)
                             .onSizeChanged { size ->
                                 barWidthDp = with(density) { size.width.toDp() }
                             }
-                            .clip(RoundedCornerShape(22.dp))
-                            .background(Color(0xFFD2E3F5))
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Color.White)
+                            .border(1.2.dp, nothingBorder, RoundedCornerShape(20.dp))
                             .padding(4.dp)
                     ) {
                         if (barWidthDp > 0.dp) {
                             val availableWidth = barWidthDp - 8.dp
-                            val w0 = availableWidth * (1.2f / 3.4f)
-                            val w1 = availableWidth * (0.9f / 3.4f)
-                            val w2 = availableWidth * (1.3f / 3.4f)
-
-                            val x0 = 0.dp
-                            val x1 = w0
-                            val x2 = w0 + w1
-
-                            val currentOffsetX = when {
-                                animatedIndicatorIndex <= 1f -> {
-                                    val t = animatedIndicatorIndex.coerceIn(0f, 1f)
-                                    x0 + (x1 - x0) * t
-                                }
-                                else -> {
-                                    val t = (animatedIndicatorIndex - 1f).coerceIn(0f, 1f)
-                                    x1 + (x2 - x1) * t
-                                }
-                            }
-
-                            val currentIndicatorWidth = when {
-                                animatedIndicatorIndex <= 1f -> {
-                                    val t = animatedIndicatorIndex.coerceIn(0f, 1f)
-                                    w0 + (w1 - w0) * t
-                                }
-                                else -> {
-                                    val t = (animatedIndicatorIndex - 1f).coerceIn(0f, 1f)
-                                    w1 + (w2 - w1) * t
-                                }
-                            }
+                            val tabWidth = availableWidth / 4f
+                            val currentOffsetX = tabWidth * animatedIndicatorIndex
 
                             Box(
                                 modifier = Modifier
                                     .offset(x = currentOffsetX)
-                                    .width(currentIndicatorWidth)
+                                    .width(tabWidth)
                                     .fillMaxHeight()
-                                    .clip(RoundedCornerShape(18.dp))
+                                    .clip(RoundedCornerShape(16.dp))
                                     .background(nothingBlack)
                             )
                         }
@@ -1606,11 +2034,12 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                             modifier = Modifier.fillMaxSize(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            // ONGLET 0: PERSONNAGE
                             Box(
                                 modifier = Modifier
-                                    .weight(1.2f)
+                                    .weight(1f)
                                     .fillMaxHeight()
-                                    .clip(RoundedCornerShape(18.dp))
+                                    .clip(RoundedCornerShape(16.dp))
                                     .clickable(
                                         interactionSource = remember { MutableInteractionSource() },
                                         indication = null
@@ -1619,20 +2048,37 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = "personnage",
-                                    fontSize = 11.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold,
-                                    color = tab0Text
-                                )
+                                Canvas(modifier = Modifier.size(20.dp)) {
+                                    val color = tab0Color
+                                    val strokeW = 2.dp.toPx()
+                                    val w = size.width
+                                    val h = size.height
+
+                                    drawCircle(
+                                        color = color,
+                                        radius = w * 0.24f,
+                                        center = Offset(w * 0.5f, h * 0.35f),
+                                        style = Stroke(width = strokeW)
+                                    )
+
+                                    drawArc(
+                                        color = color,
+                                        startAngle = 190f,
+                                        sweepAngle = 160f,
+                                        useCenter = false,
+                                        topLeft = Offset(w * 0.12f, h * 0.58f),
+                                        size = Size(w * 0.76f, h * 0.65f),
+                                        style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                                    )
+                                }
                             }
 
+                            // ONGLET 1: FOND
                             Box(
                                 modifier = Modifier
-                                    .weight(0.9f)
+                                    .weight(1f)
                                     .fillMaxHeight()
-                                    .clip(RoundedCornerShape(18.dp))
+                                    .clip(RoundedCornerShape(16.dp))
                                     .clickable(
                                         interactionSource = remember { MutableInteractionSource() },
                                         indication = null
@@ -1641,20 +2087,47 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = "fond",
-                                    fontSize = 11.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold,
-                                    color = tab1Text
-                                )
+                                Canvas(modifier = Modifier.size(20.dp)) {
+                                    val color = tab1Color
+                                    val strokeW = 2.dp.toPx()
+                                    val w = size.width
+                                    val h = size.height
+
+                                    drawRoundRect(
+                                        color = color,
+                                        topLeft = Offset(strokeW * 0.5f, strokeW * 0.5f),
+                                        size = Size(w - strokeW, h - strokeW),
+                                        cornerRadius = CornerRadius(4.dp.toPx()),
+                                        style = Stroke(width = strokeW)
+                                    )
+
+                                    drawCircle(
+                                        color = color,
+                                        radius = w * 0.12f,
+                                        center = Offset(w * 0.35f, h * 0.38f)
+                                    )
+
+                                    val path = Path().apply {
+                                        moveTo(w * 0.12f, h * 0.85f)
+                                        lineTo(w * 0.45f, h * 0.52f)
+                                        lineTo(w * 0.62f, h * 0.68f)
+                                        lineTo(w * 0.78f, h * 0.55f)
+                                        lineTo(w * 0.88f, h * 0.85f)
+                                    }
+                                    drawPath(
+                                        path = path,
+                                        color = color,
+                                        style = Stroke(width = strokeW, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                                    )
+                                }
                             }
 
+                            // ONGLET 2: HORLOGE
                             Box(
                                 modifier = Modifier
-                                    .weight(1.3f)
+                                    .weight(1f)
                                     .fillMaxHeight()
-                                    .clip(RoundedCornerShape(18.dp))
+                                    .clip(RoundedCornerShape(16.dp))
                                     .clickable(
                                         interactionSource = remember { MutableInteractionSource() },
                                         indication = null
@@ -1663,18 +2136,98 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = "planification",
-                                    fontSize = 11.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold,
-                                    color = tab2Text
-                                )
+                                Canvas(modifier = Modifier.size(20.dp)) {
+                                    val color = tab2Color
+                                    val strokeW = 2.dp.toPx()
+                                    val w = size.width
+                                    val h = size.height
+
+                                    drawCircle(
+                                        color = color,
+                                        radius = (w - strokeW) * 0.5f,
+                                        center = Offset(w * 0.5f, h * 0.5f),
+                                        style = Stroke(width = strokeW)
+                                    )
+
+                                    drawLine(
+                                        color = color,
+                                        start = Offset(w * 0.5f, h * 0.5f),
+                                        end = Offset(w * 0.5f, h * 0.28f),
+                                        strokeWidth = strokeW,
+                                        cap = StrokeCap.Round
+                                    )
+
+                                    drawLine(
+                                        color = color,
+                                        start = Offset(w * 0.5f, h * 0.5f),
+                                        end = Offset(w * 0.72f, h * 0.5f),
+                                        strokeWidth = strokeW,
+                                        cap = StrokeCap.Round
+                                    )
+                                }
+                            }
+
+                            // ONGLET 3: PLANIFICATION
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
+                                        activeTab = 3
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Canvas(modifier = Modifier.size(20.dp)) {
+                                    val color = tab3Color
+                                    val strokeW = 2.dp.toPx()
+                                    val w = size.width
+                                    val h = size.height
+
+                                    drawRoundRect(
+                                        color = color,
+                                        topLeft = Offset(strokeW * 0.5f, h * 0.18f),
+                                        size = Size(w - strokeW, h * 0.8f - strokeW),
+                                        cornerRadius = CornerRadius(4.dp.toPx()),
+                                        style = Stroke(width = strokeW)
+                                    )
+
+                                    drawLine(
+                                        color = color,
+                                        start = Offset(strokeW * 0.5f, h * 0.42f),
+                                        end = Offset(w - strokeW * 0.5f, h * 0.42f),
+                                        strokeWidth = strokeW
+                                    )
+
+                                    drawLine(
+                                        color = color,
+                                        start = Offset(w * 0.3f, h * 0.08f),
+                                        end = Offset(w * 0.3f, h * 0.25f),
+                                        strokeWidth = strokeW,
+                                        cap = StrokeCap.Round
+                                    )
+
+                                    drawLine(
+                                        color = color,
+                                        start = Offset(w * 0.7f, h * 0.08f),
+                                        end = Offset(w * 0.7f, h * 0.25f),
+                                        strokeWidth = strokeW,
+                                        cap = StrokeCap.Round
+                                    )
+
+                                    drawCircle(color = color, radius = 1.5.dp.toPx(), center = Offset(w * 0.35f, h * 0.62f))
+                                    drawCircle(color = color, radius = 1.5.dp.toPx(), center = Offset(w * 0.65f, h * 0.62f))
+                                    drawCircle(color = color, radius = 1.5.dp.toPx(), center = Offset(w * 0.35f, h * 0.80f))
+                                    drawCircle(color = color, radius = 1.5.dp.toPx(), center = Offset(w * 0.65f, h * 0.80f))
+                                }
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     Crossfade(
                         targetState = activeTab,
@@ -1690,207 +2243,317 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                             when (page) {
                                 0 -> {
                                     // ONGLET 0: PERSONNAGE
-                                    if (allCharacters.isEmpty()) {
-                                        Column(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(vertical = 32.dp),
-                                            verticalArrangement = Arrangement.Center,
-                                            horizontalAlignment = Alignment.CenterHorizontally
-                                        ) {
-                                            Text(
-                                                text = "AUCUN PERSONNAGE IMPORTÉ",
-                                                fontSize = 12.sp,
-                                                fontFamily = FontFamily.Monospace,
-                                                fontWeight = FontWeight.Bold,
-                                                color = nothingTextSecondary
-                                            )
-                                            Spacer(modifier = Modifier.height(16.dp))
-                                            Button(
-                                                onClick = {
-                                                    targetImportFolder = rootDir
-                                                    zipPickerLauncher.launch("application/zip")
-                                                },
-                                                colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
-                                                shape = RoundedCornerShape(18.dp),
-                                                modifier = Modifier
-                                                    .fillMaxWidth(0.9f)
-                                                    .height(54.dp)
-                                            ) {
-                                                Text(
-                                                    text = "IMPORTER UN PERSONNAGE (.ZIP)",
-                                                    fontSize = 12.sp,
-                                                    fontFamily = FontFamily.Monospace,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = Color.White
-                                                )
-                                            }
-                                        }
-                                    } else {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        // SECTION PRÉSETS (DIRECTEMENT SUR LE FOND)
                                         Column(
                                             modifier = Modifier.fillMaxWidth(),
                                             verticalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
+                                            Text(
+                                                text = "Présets :",
+                                                fontSize = 12.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Bold,
+                                                color = nothingTextPrimary
+                                            )
+
+                                            if (userPresets.isEmpty()) {
                                                 Text(
-                                                    text = "Arborescence",
-                                                    fontSize = 11.sp,
-                                                    fontFamily = FontFamily.Monospace,
-                                                    fontWeight = FontWeight.Bold,
+                                                    text = "Aucun préset enregistré. Cliquez sur 'Sauvegarder' en haut de l'aperçu !",
+                                                    fontSize = 10.sp,
                                                     color = nothingTextSecondary
                                                 )
+                                            } else {
+                                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                    items(userPresets) { preset ->
+                                                        Surface(
+                                                            shape = RoundedCornerShape(16.dp),
+                                                            color = nothingBlack,
+                                                            modifier = Modifier.combinedClickable(
+                                                                onClick = {
+                                                                    currentSkelPath = preset.skelPath
+                                                                    currentScale = preset.scale
+                                                                    currentOffsetX = preset.offsetX
+                                                                    currentOffsetY = preset.offsetY
 
-                                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                    OutlinedButton(
-                                                        onClick = {
-                                                            targetFolderForNewSub = rootDir
-                                                            folderNameInput = ""
-                                                            showCreateFolderDialog = true
-                                                        },
-                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                                        shape = RoundedCornerShape(12.dp),
-                                                        border = BorderStroke(1.dp, nothingBorder)
-                                                    ) {
-                                                        Text("+ Dossier", fontSize = 10.sp, color = nothingTextPrimary)
-                                                    }
+                                                                    bgType = preset.bgType
+                                                                    pickedColor = Color(preset.bgColor)
 
-                                                    Button(
-                                                        onClick = {
-                                                            targetImportFolder = rootDir
-                                                            zipPickerLauncher.launch("application/zip")
-                                                        },
-                                                        colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
-                                                        shape = RoundedCornerShape(12.dp),
-                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                                    ) {
-                                                        Text("+ Importer", fontSize = 10.sp, color = Color.White)
+                                                                    musicPath = preset.musicPath
+                                                                    isMusicEnabled = preset.isMusicEnabled
+                                                                    musicVolume = preset.musicVolume
+
+                                                                    // APPLICATION DES PARAMÈTRES D'HORLOGE DU PRÉSET
+                                                                    isClockEnabled = preset.isClockEnabled
+                                                                    clockFont = preset.clockFont
+                                                                    clockColor = preset.clockColor
+                                                                    clockSize = preset.clockSize
+                                                                    clockFormat24h = preset.clockFormat24h
+                                                                    clockShowSeconds = preset.clockShowSeconds
+                                                                    isDateEnabled = preset.isDateEnabled
+                                                                    dateFormat = preset.dateFormat
+                                                                    clockPosition = preset.clockPosition
+                                                                    clockOffsetX = preset.clockOffsetX
+                                                                    clockOffsetY = preset.clockOffsetY
+
+                                                                    prefs.isClockEnabled = preset.isClockEnabled
+                                                                    prefs.clockFont = preset.clockFont
+                                                                    prefs.clockColor = preset.clockColor
+                                                                    prefs.clockSize = preset.clockSize
+                                                                    prefs.clockFormat24h = preset.clockFormat24h
+                                                                    prefs.clockShowSeconds = preset.clockShowSeconds
+                                                                    prefs.isDateEnabled = preset.isDateEnabled
+                                                                    prefs.dateFormat = preset.dateFormat
+                                                                    prefs.clockPosition = preset.clockPosition
+                                                                    prefs.clockOffsetX = preset.clockOffsetX
+                                                                    prefs.clockOffsetY = preset.clockOffsetY
+
+                                                                    val charMatch = allCharacters.firstOrNull { it.name == preset.selectedCharacterName }
+                                                                    if (charMatch != null) {
+                                                                        updateSelectedCharacterAndVariant(charMatch)
+                                                                        val varMatch = charMatch.variants.firstOrNull { it.label == preset.selectedVariantLabel } ?: charMatch.variants.firstOrNull()
+                                                                        selectedVariant = varMatch
+                                                                    }
+
+                                                                    Toast.makeText(context, "Préset '${preset.name}' appliqué !", Toast.LENGTH_SHORT).show()
+                                                                },
+                                                                onLongClick = {
+                                                                    presetToDelete = preset
+                                                                    showDeletePresetDialog = true
+                                                                }
+                                                            )
+                                                        ) {
+                                                            Text(
+                                                                text = preset.name,
+                                                                fontSize = 11.sp,
+                                                                fontFamily = FontFamily.Monospace,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = Color.White,
+                                                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }
+                                        }
 
-                                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = nothingBorder)
+                                        // SECTION FICHIERS & ARBORESCENCE (DANS LA CASE BLEU CLAIR SANS OUTLINE)
+                                        Card(
+                                            colors = CardDefaults.cardColors(containerColor = Color(0xFFD2E3F5)),
+                                            shape = RoundedCornerShape(16.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(12.dp),
+                                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = "Fichiers :",
+                                                        fontSize = 12.sp,
+                                                        fontFamily = FontFamily.Monospace,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = nothingTextPrimary
+                                                    )
 
-                                            rootNode?.let { node ->
-                                                IdeTreeViewNode(
-                                                    node = node,
-                                                    level = 0,
-                                                    selectedCharacterPath = selectedCharacter?.folderPath ?: "",
-                                                    onSelectCharacter = { charItem ->
-                                                        updateSelectedCharacterAndVariant(charItem)
-                                                    },
-                                                    onNewSubFolder = { folderFile ->
-                                                        targetFolderForNewSub = folderFile
-                                                        folderNameInput = ""
-                                                        showCreateFolderDialog = true
-                                                    },
-                                                    onImportZip = { folderFile ->
-                                                        targetImportFolder = folderFile
-                                                        zipPickerLauncher.launch("application/zip")
-                                                    },
-                                                    onRename = { nodeToRename ->
-                                                        selectedNodeForAction = nodeToRename
-                                                        renameInputText = nodeToRename.name
-                                                        showRenameDialog = true
-                                                    },
-                                                    onMove = { nodeToMove ->
-                                                        selectedNodeForAction = nodeToMove
-                                                        showMoveDialog = true
-                                                    },
-                                                    onDelete = { nodeToDelete ->
-                                                        selectedNodeForAction = nodeToDelete
-                                                        showDeleteDialog = true
+                                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                        OutlinedButton(
+                                                            onClick = {
+                                                                targetFolderForNewSub = rootDir
+                                                                folderNameInput = ""
+                                                                showCreateFolderDialog = true
+                                                            },
+                                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                                            shape = RoundedCornerShape(12.dp),
+                                                            border = BorderStroke(1.dp, nothingBorder)
+                                                        ) {
+                                                            Text("+ Dossier", fontSize = 10.sp, color = nothingTextPrimary, fontWeight = FontWeight.Bold)
+                                                        }
+
+                                                        Button(
+                                                            onClick = {
+                                                                targetImportFolder = rootDir
+                                                                zipPickerLauncher.launch("application/zip")
+                                                            },
+                                                            colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
+                                                            shape = RoundedCornerShape(12.dp),
+                                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                                                        ) {
+                                                            Text("+ Importer", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                                        }
                                                     }
-                                                )
+                                                }
+
+                                                if (allCharacters.isEmpty()) {
+                                                    Column(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .padding(vertical = 24.dp),
+                                                        horizontalAlignment = Alignment.CenterHorizontally
+                                                    ) {
+                                                        Text(
+                                                            text = "Aucun personnage importé",
+                                                            fontSize = 12.sp,
+                                                            fontFamily = FontFamily.Monospace,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = nothingTextSecondary
+                                                        )
+                                                    }
+                                                } else {
+                                                    rootNode?.let { node ->
+                                                        IdeTreeViewNode(
+                                                            node = node,
+                                                            level = 0,
+                                                            selectedCharacterPath = selectedCharacter?.folderPath ?: "",
+                                                            onSelectCharacter = { charItem ->
+                                                                updateSelectedCharacterAndVariant(charItem)
+                                                            },
+                                                            onNewSubFolder = { folderFile ->
+                                                                targetFolderForNewSub = folderFile
+                                                                folderNameInput = ""
+                                                                showCreateFolderDialog = true
+                                                            },
+                                                            onImportZip = { folderFile ->
+                                                                targetImportFolder = folderFile
+                                                                zipPickerLauncher.launch("application/zip")
+                                                            },
+                                                            onRename = { nodeToRename ->
+                                                                selectedNodeForAction = nodeToRename
+                                                                renameInputText = nodeToRename.name
+                                                                showRenameDialog = true
+                                                            },
+                                                            onMove = { nodeToMove ->
+                                                                selectedNodeForAction = nodeToMove
+                                                                showMoveDialog = true
+                                                            },
+                                                            onDelete = { nodeToDelete ->
+                                                                selectedNodeForAction = nodeToDelete
+                                                                showDeleteDialog = true
+                                                            }
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
                                 }
                                 1 -> {
                                     // ONGLET 1: FOND
+                                    val isColorActive = bgType == WaifuPreferences.TYPE_COLOR
+                                    val isMediaActive = bgType == WaifuPreferences.TYPE_IMAGE || bgType == WaifuPreferences.TYPE_VIDEO
+
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(vertical = 8.dp),
-                                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally
+                                            .padding(vertical = 4.dp),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
                                     ) {
-                                        Text(
-                                            text = "Couleur de Fond",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = nothingTextPrimary
-                                        )
-
-                                        ColorSpectrumPicker(
-                                            initialColor = pickedColor,
-                                            onColorSelected = { color ->
-                                                pickedColor = color
-                                            }
-                                        )
-
-                                        Button(
-                                            onClick = {
-                                                clearOldBgFiles()
-                                                bgType = WaifuPreferences.TYPE_COLOR
-                                                Toast.makeText(context, "Couleur appliquée à l'aperçu !", Toast.LENGTH_SHORT).show()
-                                            },
-                                            colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
-                                            shape = RoundedCornerShape(14.dp)
+                                        // LAYOUT SCHÉMATISÉ : SÉLECTEUR TOTALEMENT REMPLI (GAUCHE) ET BOUTONS EMPILÉS (DROITE)
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(180.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                                         ) {
-                                            Text("Appliquer cette couleur", fontSize = 11.sp, color = Color.White)
-                                        }
-
-                                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = nothingBorder)
-
-                                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                            Button(
-                                                onClick = { imagePickerLauncher.launch("image/*") },
-                                                colors = ButtonDefaults.buttonColors(
-                                                    containerColor = nothingBlack,
-                                                    contentColor = Color.White
-                                                ),
-                                                shape = RoundedCornerShape(16.dp)
+                                            // CÔTÉ GAUCHE : BLOC "Couleur" AVEC CONTOUR PARFAITEMENT PARALLÈLE ET LINÉAIRE
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1.2f)
+                                                    .fillMaxHeight()
+                                                    .clip(RoundedCornerShape(20.dp))
+                                                    .background(if (isColorActive) nothingBlack else nothingBorder)
+                                                    .padding(if (isColorActive) 2.5.dp else 1.dp)
+                                                    .clip(RoundedCornerShape(17.5.dp))
+                                                    .background(if (isColorActive) Color.White else Color.Transparent)
+                                                    .padding(if (isColorActive) 1.5.dp else 0.dp)
+                                                    .clip(RoundedCornerShape(16.dp))
                                             ) {
-                                                Text("Image", fontSize = 12.sp, color = Color.White)
+                                                ColorSpectrumPicker(
+                                                    initialColor = pickedColor,
+                                                    onColorSelected = { color ->
+                                                        pickedColor = color
+                                                    },
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
                                             }
 
-                                            Button(
-                                                onClick = { videoPickerLauncher.launch("video/*") },
-                                                colors = ButtonDefaults.buttonColors(
-                                                    containerColor = nothingBlack,
-                                                    contentColor = Color.White
-                                                ),
-                                                shape = RoundedCornerShape(16.dp)
+                                            // CÔTÉ DROIT : 2 BOUTONS EMPILÉS ("image/vidéo" ET "appliquer couleur")
+                                            Column(
+                                                modifier = Modifier
+                                                    .weight(0.9f)
+                                                    .fillMaxHeight(),
+                                                verticalArrangement = Arrangement.spacedBy(10.dp)
                                             ) {
-                                                Text("Vidéo", fontSize = 12.sp, color = Color.White)
-                                            }
+                                                // BOUTON TOP RIGHT : "Image / Vidéo"
+                                                Surface(
+                                                    onClick = { mediaPickerLauncher.launch(arrayOf("image/*", "video/*")) },
+                                                    shape = RoundedCornerShape(20.dp),
+                                                    color = if (isMediaActive) nothingBlack else Color(0xFFEDF4FC),
+                                                    border = if (isMediaActive) null else BorderStroke(1.dp, nothingBorder),
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .weight(1f)
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .padding(8.dp),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text(
+                                                            text = "Image / Vidéo",
+                                                            fontSize = 11.sp,
+                                                            fontFamily = FontFamily.Monospace,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (isMediaActive) Color.White else nothingTextPrimary,
+                                                            textAlign = TextAlign.Center,
+                                                            modifier = Modifier.fillMaxWidth()
+                                                        )
+                                                    }
+                                                }
 
-                                            if (bgType != WaifuPreferences.TYPE_NONE) {
-                                                OutlinedButton(
+                                                // BOUTON BOTTOM RIGHT : "Appliquer Couleur"
+                                                Surface(
                                                     onClick = {
                                                         clearOldBgFiles()
-                                                        bgType = WaifuPreferences.TYPE_NONE
-                                                        Toast.makeText(context, "Fond réinitialisé", Toast.LENGTH_SHORT).show()
+                                                        bgType = WaifuPreferences.TYPE_COLOR
+                                                        prefs.bgType = WaifuPreferences.TYPE_COLOR
+                                                        prefs.bgColor = pickedColor.toArgb()
+                                                        Toast.makeText(context, "Couleur de fond appliquée !", Toast.LENGTH_SHORT).show()
                                                     },
-                                                    shape = RoundedCornerShape(16.dp),
-                                                    border = BorderStroke(1.dp, nothingBorder)
+                                                    shape = RoundedCornerShape(20.dp),
+                                                    color = if (isColorActive) nothingBlack else Color(0xFFEDF4FC),
+                                                    border = if (isColorActive) null else BorderStroke(1.dp, nothingBorder),
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .weight(1f)
                                                 ) {
-                                                    Text("Effacer", fontSize = 12.sp, color = nothingTextPrimary)
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .padding(8.dp),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text(
+                                                            text = "Appliquer Couleur",
+                                                            fontSize = 11.sp,
+                                                            fontFamily = FontFamily.Monospace,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (isColorActive) Color.White else nothingTextPrimary,
+                                                            textAlign = TextAlign.Center,
+                                                            modifier = Modifier.fillMaxWidth()
+                                                        )
+                                                    }
                                                 }
-                                            }
-                                        }
-
-                                        if (bgType == WaifuPreferences.TYPE_IMAGE || bgType == WaifuPreferences.TYPE_VIDEO) {
-                                            TextButton(
-                                                onClick = {
-                                                    Toast.makeText(context, "Position du fond réinitialisée", Toast.LENGTH_SHORT).show()
-                                                }
-                                            ) {
-                                                Text("Réinitialiser position du fond", fontSize = 11.sp, color = nothingTextSecondary)
                                             }
                                         }
 
@@ -1899,7 +2562,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
-                                                Text("Couper le son vidéo", fontSize = 11.sp, color = nothingTextSecondary)
+                                                Text("Couper le son de la vidéo", fontSize = 11.sp, color = nothingTextSecondary)
                                                 Switch(
                                                     checked = isVideoMuted,
                                                     onCheckedChange = {
@@ -1912,6 +2575,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
                                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = nothingBorder)
 
+                                        // SECTION MUSIQUE DE FOND
                                         Column(
                                             modifier = Modifier.fillMaxWidth(),
                                             verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -1921,7 +2585,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text("Musique de fond", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                                Text("Musique de Fond :", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     Button(
                                                         onClick = { musicPickerLauncher.launch("audio/*") },
@@ -1929,7 +2593,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                         shape = RoundedCornerShape(12.dp),
                                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                                     ) {
-                                                        Text("Choisir audio", fontSize = 11.sp, color = Color.White)
+                                                        Text("Choisir Audio", fontSize = 11.sp, color = Color.White)
                                                     }
                                                     Spacer(modifier = Modifier.width(6.dp))
                                                     Switch(
@@ -1968,7 +2632,292 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                     }
                                 }
                                 2 -> {
-                                    // ONGLET 2: PLANIFICATION
+                                    // ONGLET 2: HORLOGE NUMÉRIQUE
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        // EN-TÊTE HORLOGE NUMÉRIQUE
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("Horloge numérique :", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                            Switch(
+                                                checked = isClockEnabled,
+                                                onCheckedChange = { enabled ->
+                                                    isClockEnabled = enabled
+                                                    prefs.isClockEnabled = enabled
+                                                }
+                                            )
+                                        }
+
+                                        if (isClockEnabled) {
+                                            // TROIS GROS BOUTONS : POLICE, COULEUR, POSITION
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                // 1. BOUTON POLICE
+                                                Surface(
+                                                    onClick = { showFontDialog = true },
+                                                    shape = RoundedCornerShape(18.dp),
+                                                    color = nothingBlack,
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .height(84.dp)
+                                                ) {
+                                                    Column(
+                                                        modifier = Modifier.fillMaxSize().padding(6.dp),
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.SpaceEvenly
+                                                    ) {
+                                                        Text(
+                                                            text = "Police",
+                                                            fontSize = 12.sp,
+                                                            fontFamily = FontFamily.Monospace,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = Color.White
+                                                        )
+                                                        Text(
+                                                            text = "Aa",
+                                                            fontSize = 18.sp,
+                                                            fontFamily = when (clockFont) {
+                                                                WaifuPreferences.FONT_MONOSPACE -> FontFamily.Monospace
+                                                                WaifuPreferences.FONT_SERIF -> FontFamily.Serif
+                                                                WaifuPreferences.FONT_SANS_SERIF -> FontFamily.SansSerif
+                                                                WaifuPreferences.FONT_THIN -> FontFamily.SansSerif
+                                                                WaifuPreferences.FONT_CONDENSED -> FontFamily.SansSerif
+                                                                WaifuPreferences.FONT_CURSIVE -> FontFamily.Cursive
+                                                                WaifuPreferences.FONT_CASUAL -> FontFamily.Default
+                                                                else -> FontFamily.Monospace
+                                                            },
+                                                            fontWeight = when (clockFont) {
+                                                                WaifuPreferences.FONT_THIN -> FontWeight.Thin
+                                                                WaifuPreferences.FONT_CONDENSED -> FontWeight.Medium
+                                                                WaifuPreferences.FONT_CURSIVE -> FontWeight.Normal
+                                                                else -> FontWeight.Bold
+                                                            },
+                                                            color = Color.White
+                                                        )
+                                                    }
+                                                }
+
+                                                // 2. BOUTON COULEUR
+                                                Surface(
+                                                    onClick = { showColorDialog = true },
+                                                    shape = RoundedCornerShape(18.dp),
+                                                    color = nothingBlack,
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .height(84.dp)
+                                                ) {
+                                                    Column(
+                                                        modifier = Modifier.fillMaxSize().padding(6.dp),
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.SpaceEvenly
+                                                    ) {
+                                                        Text(
+                                                            text = "Couleur",
+                                                            fontSize = 12.sp,
+                                                            fontFamily = FontFamily.Monospace,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = Color.White
+                                                        )
+                                                        Canvas(modifier = Modifier.size(20.dp)) {
+                                                            val color = Color.White
+                                                            val strokeW = 1.8.dp.toPx()
+                                                            val w = size.width
+                                                            val h = size.height
+
+                                                            drawCircle(
+                                                                color = color,
+                                                                radius = w * 0.45f,
+                                                                center = Offset(w * 0.5f, h * 0.5f),
+                                                                style = Stroke(width = strokeW)
+                                                            )
+                                                            drawCircle(color = color, radius = 2.dp.toPx(), center = Offset(w * 0.35f, h * 0.35f))
+                                                            drawCircle(color = color, radius = 2.dp.toPx(), center = Offset(w * 0.65f, h * 0.35f))
+                                                            drawCircle(color = color, radius = 2.dp.toPx(), center = Offset(w * 0.35f, h * 0.65f))
+                                                            drawCircle(color = color, radius = 2.dp.toPx(), center = Offset(w * 0.68f, h * 0.65f))
+                                                        }
+                                                    }
+                                                }
+
+                                                // 3. BOUTON POSITION
+                                                val isFront = clockPosition == WaifuPreferences.CLOCK_POS_FRONT
+                                                Surface(
+                                                    onClick = {
+                                                        val newPos = if (isFront) WaifuPreferences.CLOCK_POS_BACK else WaifuPreferences.CLOCK_POS_FRONT
+                                                        clockPosition = newPos
+                                                        prefs.clockPosition = newPos
+                                                    },
+                                                    shape = RoundedCornerShape(18.dp),
+                                                    color = if (isFront) nothingBlack else Color(0xFFD2E3F5),
+                                                    border = if (isFront) null else BorderStroke(1.dp, nothingBorder),
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .height(84.dp)
+                                                ) {
+                                                    Column(
+                                                        modifier = Modifier.fillMaxSize().padding(6.dp),
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.SpaceEvenly
+                                                    ) {
+                                                        Text(
+                                                            text = "Position",
+                                                            fontSize = 12.sp,
+                                                            fontFamily = FontFamily.Monospace,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (isFront) Color.White else nothingTextPrimary
+                                                        )
+                                                        Canvas(modifier = Modifier.size(20.dp)) {
+                                                            val iconColor = if (isFront) Color.White else nothingTextPrimary
+                                                            val strokeW = 1.8.dp.toPx()
+                                                            val w = size.width
+                                                            val h = size.height
+
+                                                            if (isFront) {
+                                                                drawRoundRect(
+                                                                    color = iconColor.copy(alpha = 0.5f),
+                                                                    topLeft = Offset(w * 0.10f, h * 0.10f),
+                                                                    size = Size(w * 0.55f, h * 0.55f),
+                                                                    cornerRadius = CornerRadius(4.dp.toPx()),
+                                                                    style = Stroke(width = strokeW)
+                                                                )
+                                                                drawRoundRect(
+                                                                    color = iconColor,
+                                                                    topLeft = Offset(w * 0.35f, h * 0.35f),
+                                                                    size = Size(w * 0.55f, h * 0.55f),
+                                                                    cornerRadius = CornerRadius(4.dp.toPx())
+                                                                )
+                                                            } else {
+                                                                drawRoundRect(
+                                                                    color = iconColor,
+                                                                    topLeft = Offset(w * 0.10f, h * 0.10f),
+                                                                    size = Size(w * 0.55f, h * 0.55f),
+                                                                    cornerRadius = CornerRadius(4.dp.toPx())
+                                                                )
+                                                                drawRoundRect(
+                                                                    color = iconColor.copy(alpha = 0.5f),
+                                                                    topLeft = Offset(w * 0.35f, h * 0.35f),
+                                                                    size = Size(w * 0.55f, h * 0.55f),
+                                                                    cornerRadius = CornerRadius(4.dp.toPx()),
+                                                                    style = Stroke(width = strokeW)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            HorizontalDivider(color = nothingBorder)
+
+                                            Text("Affichage de la date :", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    FilterChip(
+                                                        selected = !isDateEnabled,
+                                                        onClick = {
+                                                            isDateEnabled = false
+                                                            prefs.isDateEnabled = false
+                                                        },
+                                                        label = { Text("Masquée", fontSize = 11.sp) },
+                                                        shape = RoundedCornerShape(12.dp),
+                                                        colors = FilterChipDefaults.filterChipColors(
+                                                            selectedContainerColor = nothingBlack,
+                                                            selectedLabelColor = Color.White
+                                                        )
+                                                    )
+
+                                                    FilterChip(
+                                                        selected = isDateEnabled && dateFormat == WaifuPreferences.DATE_FORMAT_SHORT,
+                                                        onClick = {
+                                                            isDateEnabled = true
+                                                            dateFormat = WaifuPreferences.DATE_FORMAT_SHORT
+                                                            prefs.isDateEnabled = true
+                                                            prefs.dateFormat = WaifuPreferences.DATE_FORMAT_SHORT
+                                                        },
+                                                        label = { Text("Abrégé (12 oct.)", fontSize = 11.sp) },
+                                                        shape = RoundedCornerShape(12.dp),
+                                                        colors = FilterChipDefaults.filterChipColors(
+                                                            selectedContainerColor = nothingBlack,
+                                                            selectedLabelColor = Color.White
+                                                        )
+                                                    )
+
+                                                    FilterChip(
+                                                        selected = isDateEnabled && dateFormat == WaifuPreferences.DATE_FORMAT_FULL,
+                                                        onClick = {
+                                                            isDateEnabled = true
+                                                            dateFormat = WaifuPreferences.DATE_FORMAT_FULL
+                                                            prefs.isDateEnabled = true
+                                                            prefs.dateFormat = WaifuPreferences.DATE_FORMAT_FULL
+                                                        },
+                                                        label = { Text("Toute lettre (12 octobre)", fontSize = 11.sp) },
+                                                        shape = RoundedCornerShape(12.dp),
+                                                        colors = FilterChipDefaults.filterChipColors(
+                                                            selectedContainerColor = nothingBlack,
+                                                            selectedLabelColor = Color.White
+                                                        )
+                                                    )
+                                                }
+
+                                                HorizontalDivider(color = nothingBorder)
+
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text("Format 24h (HH:mm)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                                    Switch(
+                                                        checked = clockFormat24h,
+                                                        onCheckedChange = {
+                                                            clockFormat24h = it
+                                                            prefs.clockFormat24h = it
+                                                        }
+                                                    )
+                                                }
+
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text("Afficher les secondes", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                                    Switch(
+                                                        checked = clockShowSeconds,
+                                                        onCheckedChange = {
+                                                            clockShowSeconds = it
+                                                            prefs.clockShowSeconds = it
+                                                        }
+                                                    )
+                                                }
+
+                                                HorizontalDivider(color = nothingBorder)
+
+                                                Text("Taille : ${clockSize.toInt()} sp", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                                Slider(
+                                                    value = clockSize,
+                                                    onValueChange = {
+                                                        clockSize = it
+                                                        prefs.clockSize = it
+                                                    },
+                                                    valueRange = 20f..96f,
+                                                    colors = SliderDefaults.colors(
+                                                        thumbColor = nothingBlack,
+                                                        activeTrackColor = Color(0xFF1D4ED8),
+                                                        inactiveTrackColor = Color(0xFFB4CDEB)
+                                                    )
+                                                )
+                                            }
+                                        }
+                                }
+                                3 -> {
+                                    // ONGLET 3: PLANIFICATION
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -1990,190 +2939,188 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                             )
                                         }
 
-                                        HorizontalDivider(color = nothingBorder)
+                                        if (isScheduleEnabled) {
+                                            HorizontalDivider(color = nothingBorder)
 
-                                        Text("Sélectionner un jour à configurer :", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                            Text("Sélectionner un jour à configurer :", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
 
-                                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            items(daysOfWeek) { (dayKey, dayLabel) ->
-                                                val isSelected = dayKey == selectedDayKey
-                                                val daySched = remember(selectedDayKey, dayKey, scheduleVersion) {
-                                                    prefs.getDaySchedule(dayKey, dayLabel)
-                                                }
-                                                FilterChip(
-                                                    selected = isSelected,
-                                                    onClick = {
-                                                        selectedDayKey = dayKey
-                                                        selectedDayLabel = dayLabel
-                                                        currentDaySchedule = prefs.getDaySchedule(dayKey, dayLabel)
-                                                    },
-                                                    label = {
-                                                        Text(
-                                                            text = if (daySched.isEnabled) dayLabel else "$dayLabel (Off)",
-                                                            fontSize = 11.sp,
-                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                items(daysOfWeek) { (dayKey, dayLabel) ->
+                                                    val isSelected = dayKey == selectedDayKey
+                                                    val daySched = remember(selectedDayKey, dayKey, scheduleVersion) {
+                                                        prefs.getDaySchedule(dayKey, dayLabel)
+                                                    }
+                                                    FilterChip(
+                                                        selected = isSelected,
+                                                        onClick = {
+                                                            selectedDayKey = dayKey
+                                                            selectedDayLabel = dayLabel
+                                                            currentDaySchedule = prefs.getDaySchedule(dayKey, dayLabel)
+                                                        },
+                                                        label = {
+                                                            Text(
+                                                                text = if (daySched.isEnabled) dayLabel else "$dayLabel (Off)",
+                                                                fontSize = 11.sp,
+                                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                                            )
+                                                        },
+                                                        shape = RoundedCornerShape(12.dp),
+                                                        colors = FilterChipDefaults.filterChipColors(
+                                                            selectedContainerColor = nothingBlack,
+                                                            selectedLabelColor = Color.White
                                                         )
+                                                    )
+                                                }
+                                            }
+
+                                            Card(
+                                                colors = CardDefaults.cardColors(containerColor = Color(0xFFD2E3F5)),
+                                                shape = RoundedCornerShape(16.dp),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Column(
+                                                    modifier = Modifier.padding(12.dp),
+                                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Text("Pause le $selectedDayLabel", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                                        Switch(
+                                                            checked = currentDaySchedule.isEnabled,
+                                                            onCheckedChange = { enabled ->
+                                                                val updated = currentDaySchedule.copy(isEnabled = enabled)
+                                                                currentDaySchedule = updated
+                                                                prefs.setDaySchedule(updated)
+                                                                scheduleVersion++
+                                                            }
+                                                        )
+                                                    }
+
+                                                    if (currentDaySchedule.isEnabled) {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            val startStr = String.format("%02d:%02d", currentDaySchedule.startHour, currentDaySchedule.startMinute)
+                                                            val endStr = String.format("%02d:%02d", currentDaySchedule.endHour, currentDaySchedule.endMinute)
+
+                                                            Text("Plage : $startStr à $endStr", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+
+                                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                                Button(
+                                                                    onClick = {
+                                                                        TimePickerDialog(
+                                                                            context,
+                                                                            { _, h, m ->
+                                                                                val updated = currentDaySchedule.copy(startHour = h, startMinute = m)
+                                                                                currentDaySchedule = updated
+                                                                                prefs.setDaySchedule(updated)
+                                                                                scheduleVersion++
+                                                                            },
+                                                                            currentDaySchedule.startHour,
+                                                                            currentDaySchedule.startMinute,
+                                                                            true
+                                                                        ).show()
+                                                                    },
+                                                                    colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
+                                                                    shape = RoundedCornerShape(12.dp),
+                                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                                                ) {
+                                                                    Text("Début", fontSize = 10.sp, color = Color.White)
+                                                                }
+
+                                                                Button(
+                                                                    onClick = {
+                                                                        TimePickerDialog(
+                                                                            context,
+                                                                            { _, h, m ->
+                                                                                val updated = currentDaySchedule.copy(endHour = h, endMinute = m)
+                                                                                currentDaySchedule = updated
+                                                                                prefs.setDaySchedule(updated)
+                                                                                scheduleVersion++
+                                                                            },
+                                                                            currentDaySchedule.endHour,
+                                                                            currentDaySchedule.endMinute,
+                                                                            true
+                                                                        ).show()
+                                                                    },
+                                                                    colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
+                                                                    shape = RoundedCornerShape(12.dp),
+                                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                                                ) {
+                                                                    Text("Fin", fontSize = 10.sp, color = Color.White)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            Text("Fond de remplacement pendant la pause :", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                FilterChip(
+                                                    selected = fallbackType == WaifuPreferences.TYPE_COLOR,
+                                                    onClick = {
+                                                        fallbackType = WaifuPreferences.TYPE_COLOR
+                                                        prefs.scheduleFallbackType = WaifuPreferences.TYPE_COLOR
                                                     },
+                                                    label = { Text("Noir Pur", fontSize = 11.sp) },
                                                     shape = RoundedCornerShape(12.dp),
                                                     colors = FilterChipDefaults.filterChipColors(
                                                         selectedContainerColor = nothingBlack,
                                                         selectedLabelColor = Color.White
                                                     )
                                                 )
-                                            }
-                                        }
 
-                                        HorizontalDivider(color = nothingBorder)
-
-                                        Card(
-                                            colors = CardDefaults.cardColors(containerColor = Color(0xFFD2E3F5)),
-                                            shape = RoundedCornerShape(16.dp),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Column(
-                                                modifier = Modifier.padding(12.dp),
-                                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Text("Pause le $selectedDayLabel", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
-                                                    Switch(
-                                                        checked = currentDaySchedule.isEnabled,
-                                                        onCheckedChange = { enabled ->
-                                                            val updated = currentDaySchedule.copy(isEnabled = enabled)
-                                                            currentDaySchedule = updated
-                                                            prefs.setDaySchedule(updated)
-                                                            scheduleVersion++
-                                                        }
+                                                FilterChip(
+                                                    selected = fallbackType == WaifuPreferences.TYPE_IMAGE,
+                                                    onClick = {
+                                                        fallbackType = WaifuPreferences.TYPE_IMAGE
+                                                        prefs.scheduleFallbackType = WaifuPreferences.TYPE_IMAGE
+                                                    },
+                                                    label = { Text("Image de secours", fontSize = 11.sp) },
+                                                    shape = RoundedCornerShape(12.dp),
+                                                    colors = FilterChipDefaults.filterChipColors(
+                                                        selectedContainerColor = nothingBlack,
+                                                        selectedLabelColor = Color.White
                                                     )
-                                                }
+                                                )
 
-                                                if (currentDaySchedule.isEnabled) {
-                                                    Row(
-                                                        modifier = Modifier.fillMaxWidth(),
-                                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                                        verticalAlignment = Alignment.CenterVertically
+                                                if (fallbackType == WaifuPreferences.TYPE_IMAGE) {
+                                                    Button(
+                                                        onClick = { fallbackImagePickerLauncher.launch("image/*") },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
+                                                        shape = RoundedCornerShape(12.dp),
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                                     ) {
-                                                        val startStr = String.format("%02d:%02d", currentDaySchedule.startHour, currentDaySchedule.startMinute)
-                                                        val endStr = String.format("%02d:%02d", currentDaySchedule.endHour, currentDaySchedule.endMinute)
-
-                                                        Text("Plage : $startStr à $endStr", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
-
-                                                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                            Button(
-                                                                onClick = {
-                                                                    TimePickerDialog(
-                                                                        context,
-                                                                        { _, h, m ->
-                                                                            val updated = currentDaySchedule.copy(startHour = h, startMinute = m)
-                                                                            currentDaySchedule = updated
-                                                                            prefs.setDaySchedule(updated)
-                                                                            scheduleVersion++
-                                                                        },
-                                                                        currentDaySchedule.startHour,
-                                                                        currentDaySchedule.startMinute,
-                                                                        true
-                                                                    ).show()
-                                                                },
-                                                                colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
-                                                                shape = RoundedCornerShape(12.dp),
-                                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                                            ) {
-                                                                Text("Début", fontSize = 10.sp, color = Color.White)
-                                                            }
-
-                                                            Button(
-                                                                onClick = {
-                                                                    TimePickerDialog(
-                                                                        context,
-                                                                        { _, h, m ->
-                                                                            val updated = currentDaySchedule.copy(endHour = h, endMinute = m)
-                                                                            currentDaySchedule = updated
-                                                                            prefs.setDaySchedule(updated)
-                                                                            scheduleVersion++
-                                                                        },
-                                                                        currentDaySchedule.endHour,
-                                                                        currentDaySchedule.endMinute,
-                                                                        true
-                                                                    ).show()
-                                                                },
-                                                                colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
-                                                                shape = RoundedCornerShape(12.dp),
-                                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                                            ) {
-                                                                Text("Fin", fontSize = 10.sp, color = Color.White)
-                                                            }
-                                                        }
+                                                        Text("Choisir image", fontSize = 10.sp, color = Color.White)
                                                     }
                                                 }
                                             }
-                                        }
 
-                                        HorizontalDivider(color = nothingBorder)
+                                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = nothingBorder)
 
-                                        Text("Fond de remplacement pendant la pause :", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            FilterChip(
-                                                selected = fallbackType == WaifuPreferences.TYPE_COLOR,
+                                            RagebaitButton(
+                                                isRagebaitEnabled = isRagebaitEnabled,
                                                 onClick = {
-                                                    fallbackType = WaifuPreferences.TYPE_COLOR
-                                                    prefs.scheduleFallbackType = WaifuPreferences.TYPE_COLOR
+                                                    if (isRagebaitEnabled) {
+                                                        pinInputText = ""
+                                                        showRagebaitDisableDialog = true
+                                                    } else {
+                                                        pinInputText = ""
+                                                        showRagebaitEnableDialog = true
+                                                    }
                                                 },
-                                                label = { Text("Noir Pur", fontSize = 11.sp) },
-                                                shape = RoundedCornerShape(12.dp),
-                                                colors = FilterChipDefaults.filterChipColors(
-                                                    selectedContainerColor = nothingBlack,
-                                                    selectedLabelColor = Color.White
-                                                )
+                                                modifier = Modifier.fillMaxWidth()
                                             )
-
-                                            FilterChip(
-                                                selected = fallbackType == WaifuPreferences.TYPE_IMAGE,
-                                                onClick = {
-                                                    fallbackType = WaifuPreferences.TYPE_IMAGE
-                                                    prefs.scheduleFallbackType = WaifuPreferences.TYPE_IMAGE
-                                                },
-                                                label = { Text("Image de secours", fontSize = 11.sp) },
-                                                shape = RoundedCornerShape(12.dp),
-                                                colors = FilterChipDefaults.filterChipColors(
-                                                    selectedContainerColor = nothingBlack,
-                                                    selectedLabelColor = Color.White
-                                                )
-                                            )
-
-                                            if (fallbackType == WaifuPreferences.TYPE_IMAGE) {
-                                                Button(
-                                                    onClick = { fallbackImagePickerLauncher.launch("image/*") },
-                                                    colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
-                                                    shape = RoundedCornerShape(12.dp),
-                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                                ) {
-                                                    Text("Choisir image", fontSize = 10.sp, color = Color.White)
-                                                }
-                                            }
                                         }
-
-                                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = nothingBorder)
-
-                                        RagebaitButton(
-                                            isRagebaitEnabled = isRagebaitEnabled,
-                                            onClick = {
-                                                if (isRagebaitEnabled) {
-                                                    pinInputText = ""
-                                                    showRagebaitDisableDialog = true
-                                                } else {
-                                                    pinInputText = ""
-                                                    showRagebaitEnableDialog = true
-                                                }
-                                            },
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
                                     }
                                 }
                             }
@@ -2261,16 +3208,50 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                 }
 
                 // RENDU EN PLEIN ÉCRAN
-                key(isFullscreen) {
+                key(isFullscreen, clockPosition) {
                     if (isFullscreen) {
-                        Live2DWebView(
-                            modelJsonPath = currentSkelPath,
-                            scale = currentScale,
-                            offsetX = currentOffsetX,
-                            offsetY = currentOffsetY,
-                            doubleTapTrigger = doubleTapTrigger,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            if (clockPosition == WaifuPreferences.CLOCK_POS_BACK) {
+                                DigitalClockOverlay(
+                                    isClockEnabled = isClockEnabled,
+                                    clockFont = clockFont,
+                                    clockColor = clockColor,
+                                    clockSizeSp = clockSize,
+                                    clockFormat24h = clockFormat24h,
+                                    clockShowSeconds = clockShowSeconds,
+                                    isDateEnabled = isDateEnabled,
+                                    dateFormat = dateFormat,
+                                    clockOffsetXPx = clockOffsetX,
+                                    clockOffsetYPx = clockOffsetY,
+                                    onPositionDrag = onClockDrag
+                                )
+                            }
+
+                            Live2DWebView(
+                                modelJsonPath = currentSkelPath,
+                                scale = currentScale,
+                                offsetX = currentOffsetX,
+                                offsetY = currentOffsetY,
+                                doubleTapTrigger = doubleTapTrigger,
+                                modifier = Modifier.fillMaxSize()
+                            )
+
+                            if (clockPosition == WaifuPreferences.CLOCK_POS_FRONT) {
+                                DigitalClockOverlay(
+                                    isClockEnabled = isClockEnabled,
+                                    clockFont = clockFont,
+                                    clockColor = clockColor,
+                                    clockSizeSp = clockSize,
+                                    clockFormat24h = clockFormat24h,
+                                    clockShowSeconds = clockShowSeconds,
+                                    isDateEnabled = isDateEnabled,
+                                    dateFormat = dateFormat,
+                                    clockOffsetXPx = clockOffsetX,
+                                    clockOffsetYPx = clockOffsetY,
+                                    onPositionDrag = onClockDrag
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -2368,6 +3349,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 fun ColorSpectrumPicker(
     initialColor: Color,
     onColorSelected: (Color) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var selectedOffset by remember { mutableStateOf(Offset(0.5f, 0.5f)) }
     var currentColor by remember { mutableStateOf(initialColor) }
@@ -2396,69 +3378,61 @@ fun ColorSpectrumPicker(
         )
     }
 
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(140.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .border(1.dp, Color(0xFFB4CDEB), RoundedCornerShape(16.dp))
-                .pointerInput(Unit) {
-                    detectTapGestures { offset ->
-                        val x = (offset.x / size.width).coerceIn(0f, 1f)
-                        val y = (offset.y / size.height).coerceIn(0f, 1f)
-                        selectedOffset = Offset(x, y)
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .clip(RoundedCornerShape(18.dp))
+            .pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    val x = (offset.x / size.width).coerceIn(0f, 1f)
+                    val y = (offset.y / size.height).coerceIn(0f, 1f)
+                    selectedOffset = Offset(x, y)
 
-                        val hue = x * 360f
-                        val saturation = 1f - (y * 0.5f)
-                        val value = 1f - y
+                    val hue = x * 360f
+                    val saturation = 1f - (y * 0.5f)
+                    val value = 1f - y
 
-                        val hsvColor = AndroidColor.HSVToColor(floatArrayOf(hue, saturation, value))
-                        val newColor = Color(hsvColor)
-                        currentColor = newColor
-                        onColorSelected(newColor)
-                    }
+                    val hsvColor = AndroidColor.HSVToColor(floatArrayOf(hue, saturation, value))
+                    val newColor = Color(hsvColor)
+                    currentColor = newColor
+                    onColorSelected(newColor)
                 }
-                .pointerInput(Unit) {
-                    detectDragGestures { change, _ ->
-                        val x = (change.position.x / size.width).coerceIn(0f, 1f)
-                        val y = (change.position.y / size.height).coerceIn(0f, 1f)
-                        selectedOffset = Offset(x, y)
-
-                        val hue = x * 360f
-                        val saturation = 1f - (y * 0.5f)
-                        val value = 1f - y
-
-                        val hsvColor = AndroidColor.HSVToColor(floatArrayOf(hue, saturation, value))
-                        val newColor = Color(hsvColor)
-                        currentColor = newColor
-                        onColorSelected(newColor)
-                    }
-                }
-        ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                drawRect(brush = hueGradient)
-                drawRect(brush = saturationValueGradient)
-
-                val indicatorX = selectedOffset.x * size.width
-                val indicatorY = selectedOffset.y * size.height
-
-                drawCircle(
-                    color = Color.White,
-                    radius = 12.dp.toPx(),
-                    center = Offset(indicatorX, indicatorY),
-                    style = Stroke(width = 3.dp.toPx())
-                )
-                drawCircle(
-                    color = currentColor,
-                    radius = 9.dp.toPx(),
-                    center = Offset(indicatorX, indicatorY)
-                )
             }
+            .pointerInput(Unit) {
+                detectDragGestures { change, _ ->
+                    val x = (change.position.x / size.width).coerceIn(0f, 1f)
+                    val y = (change.position.y / size.height).coerceIn(0f, 1f)
+                    selectedOffset = Offset(x, y)
+
+                    val hue = x * 360f
+                    val saturation = 1f - (y * 0.5f)
+                    val value = 1f - y
+
+                    val hsvColor = AndroidColor.HSVToColor(floatArrayOf(hue, saturation, value))
+                    val newColor = Color(hsvColor)
+                    currentColor = newColor
+                    onColorSelected(newColor)
+                }
+            }
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawRect(brush = hueGradient)
+            drawRect(brush = saturationValueGradient)
+
+            val indicatorX = selectedOffset.x * size.width
+            val indicatorY = selectedOffset.y * size.height
+
+            drawCircle(
+                color = Color.White,
+                radius = 11.dp.toPx(),
+                center = Offset(indicatorX, indicatorY),
+                style = Stroke(width = 2.5.dp.toPx())
+            )
+            drawCircle(
+                color = currentColor,
+                radius = 8.dp.toPx(),
+                center = Offset(indicatorX, indicatorY)
+            )
         }
     }
 }
@@ -2683,6 +3657,124 @@ fun IdeTreeViewNode(
                         }
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun DigitalClockOverlay(
+    isClockEnabled: Boolean,
+    clockFont: String,
+    clockColor: Int,
+    clockSizeSp: Float,
+    clockFormat24h: Boolean,
+    clockShowSeconds: Boolean,
+    isDateEnabled: Boolean,
+    dateFormat: String,
+    clockOffsetXPx: Float,
+    clockOffsetYPx: Float,
+    onPositionDrag: ((Float, Float) -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    if (!isClockEnabled) return
+
+    var timeText by remember { mutableStateOf("") }
+    var dateText by remember { mutableStateOf("") }
+
+    LaunchedEffect(clockFormat24h, clockShowSeconds, isDateEnabled, dateFormat) {
+        while (true) {
+            val now = Calendar.getInstance()
+            val timePattern = when {
+                clockFormat24h && clockShowSeconds -> "HH:mm:ss"
+                clockFormat24h -> "HH:mm"
+                clockShowSeconds -> "hh:mm:ss a"
+                else -> "hh:mm a"
+            }
+            timeText = SimpleDateFormat(timePattern, Locale.getDefault()).format(now.time)
+
+            if (isDateEnabled) {
+                val datePattern = if (dateFormat == WaifuPreferences.DATE_FORMAT_FULL) "d MMMM" else "d MMM"
+                dateText = SimpleDateFormat(datePattern, Locale.FRENCH).format(now.time)
+            } else {
+                dateText = ""
+            }
+            delay(1000L)
+        }
+    }
+
+    val fontFamily = remember(clockFont) {
+        when (clockFont) {
+            WaifuPreferences.FONT_MONOSPACE -> FontFamily.Monospace
+            WaifuPreferences.FONT_SERIF -> FontFamily.Serif
+            WaifuPreferences.FONT_SANS_SERIF -> FontFamily.SansSerif
+            WaifuPreferences.FONT_THIN -> FontFamily.SansSerif
+            WaifuPreferences.FONT_CONDENSED -> FontFamily.SansSerif
+            WaifuPreferences.FONT_CURSIVE -> FontFamily.Cursive
+            WaifuPreferences.FONT_CASUAL -> FontFamily.Default
+            else -> FontFamily.Monospace
+        }
+    }
+
+    val fontWeight = remember(clockFont) {
+        when (clockFont) {
+            WaifuPreferences.FONT_THIN -> FontWeight.Thin
+            WaifuPreferences.FONT_CONDENSED -> FontWeight.Medium
+            WaifuPreferences.FONT_CURSIVE -> FontWeight.Normal
+            else -> FontWeight.Bold
+        }
+    }
+
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .graphicsLayer {
+                    translationX = clockOffsetXPx
+                    translationY = clockOffsetYPx
+                }
+                .pointerInput(onPositionDrag) {
+                    if (onPositionDrag != null) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            onPositionDrag(dragAmount.x, dragAmount.y)
+                        }
+                    }
+                }
+        ) {
+            Text(
+                text = timeText,
+                fontSize = clockSizeSp.sp,
+                fontFamily = fontFamily,
+                fontWeight = fontWeight,
+                color = Color(clockColor),
+                textAlign = TextAlign.Center,
+                style = TextStyle(
+                    shadow = Shadow(
+                        color = Color.Black.copy(alpha = 0.65f),
+                        blurRadius = 10f
+                    )
+                )
+            )
+
+            if (isDateEnabled && dateText.isNotEmpty()) {
+                Text(
+                    text = dateText,
+                    fontSize = (clockSizeSp * 0.52f).sp,
+                    fontFamily = fontFamily,
+                    fontWeight = fontWeight,
+                    color = Color(clockColor),
+                    textAlign = TextAlign.Center,
+                    style = TextStyle(
+                        shadow = Shadow(
+                            color = Color.Black.copy(alpha = 0.65f),
+                            blurRadius = 8f
+                        )
+                    )
+                )
             }
         }
     }

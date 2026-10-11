@@ -37,6 +37,17 @@ data class PresetItem(
     val musicPath: String,
     val isMusicEnabled: Boolean,
     val musicVolume: Float,
+    val isClockEnabled: Boolean = true,
+    val clockFont: String = "digital",
+    val clockColor: Int = 0xFFFFFFFF.toInt(),
+    val clockSize: Float = 48f,
+    val clockFormat24h: Boolean = true,
+    val clockShowSeconds: Boolean = false,
+    val isDateEnabled: Boolean = true,
+    val dateFormat: String = "full",
+    val clockPosition: String = "front",
+    val clockOffsetX: Float = 0f,
+    val clockOffsetY: Float = -350f,
 )
 
 class WaifuPreferences(context: Context) {
@@ -134,6 +145,51 @@ class WaifuPreferences(context: Context) {
         get() = prefs.getString(KEY_SCHEDULE_FALLBACK_IMAGE, "") ?: ""
         set(value) = prefs.edit { putString(KEY_SCHEDULE_FALLBACK_IMAGE, value) }
 
+    // Horloge Numérique
+    var isClockEnabled: Boolean
+        get() = prefs.getBoolean(KEY_CLOCK_ENABLED, false)
+        set(value) = prefs.edit { putBoolean(KEY_CLOCK_ENABLED, value) }
+
+    var clockFont: String
+        get() = prefs.getString(KEY_CLOCK_FONT, FONT_MONOSPACE) ?: FONT_MONOSPACE
+        set(value) = prefs.edit { putString(KEY_CLOCK_FONT, value) }
+
+    var clockColor: Int
+        get() = prefs.getInt(KEY_CLOCK_COLOR, 0xFFFFFFFF.toInt())
+        set(value) = prefs.edit { putInt(KEY_CLOCK_COLOR, value) }
+
+    var clockSize: Float
+        get() = prefs.getFloat(KEY_CLOCK_SIZE, 42f)
+        set(value) = prefs.edit { putFloat(KEY_CLOCK_SIZE, value) }
+
+    var clockFormat24h: Boolean
+        get() = prefs.getBoolean(KEY_CLOCK_FORMAT_24H, true)
+        set(value) = prefs.edit { putBoolean(KEY_CLOCK_FORMAT_24H, value) }
+
+    var clockShowSeconds: Boolean
+        get() = prefs.getBoolean(KEY_CLOCK_SHOW_SECONDS, false)
+        set(value) = prefs.edit { putBoolean(KEY_CLOCK_SHOW_SECONDS, value) }
+
+    var clockPosition: String
+        get() = prefs.getString(KEY_CLOCK_POSITION, CLOCK_POS_FRONT) ?: CLOCK_POS_FRONT
+        set(value) = prefs.edit { putString(KEY_CLOCK_POSITION, value) }
+
+    var clockOffsetX: Float
+        get() = prefs.getFloat(KEY_CLOCK_OFFSET_X, 0f)
+        set(value) = prefs.edit { putFloat(KEY_CLOCK_OFFSET_X, value) }
+
+    var clockOffsetY: Float
+        get() = prefs.getFloat(KEY_CLOCK_OFFSET_Y, -350f)
+        set(value) = prefs.edit { putFloat(KEY_CLOCK_OFFSET_Y, value) }
+
+    var isDateEnabled: Boolean
+        get() = prefs.getBoolean(KEY_DATE_ENABLED, true)
+        set(value) = prefs.edit { putBoolean(KEY_DATE_ENABLED, value) }
+
+    var dateFormat: String
+        get() = prefs.getString(KEY_DATE_FORMAT, DATE_FORMAT_SHORT) ?: DATE_FORMAT_SHORT
+        set(value) = prefs.edit { putString(KEY_DATE_FORMAT, value) }
+
     // Mode Ragebait
     var isRagebaitEnabled: Boolean
         get() = prefs.getBoolean(KEY_RAGEBAIT_ENABLED, false)
@@ -175,7 +231,18 @@ class WaifuPreferences(context: Context) {
                         bgOffsetY = obj.optDouble("bgOffsetY", 0.0).toFloat(),
                         musicPath = obj.optString("musicPath", ""),
                         isMusicEnabled = obj.optBoolean("isMusicEnabled", false),
-                        musicVolume = obj.optDouble("musicVolume", 0.8).toFloat()
+                        musicVolume = obj.optDouble("musicVolume", 0.8).toFloat(),
+                        isClockEnabled = obj.optBoolean("isClockEnabled", true),
+                        clockFont = obj.optString("clockFont", FONT_MONOSPACE),
+                        clockColor = obj.optInt("clockColor", 0xFFFFFFFF.toInt()),
+                        clockSize = obj.optDouble("clockSize", 48.0).toFloat(),
+                        clockFormat24h = obj.optBoolean("clockFormat24h", true),
+                        clockShowSeconds = obj.optBoolean("clockShowSeconds", false),
+                        isDateEnabled = obj.optBoolean("isDateEnabled", true),
+                        dateFormat = obj.optString("dateFormat", DATE_FORMAT_FULL),
+                        clockPosition = obj.optString("clockPosition", CLOCK_POS_FRONT),
+                        clockOffsetX = obj.optDouble("clockOffsetX", 0.0).toFloat(),
+                        clockOffsetY = obj.optDouble("clockOffsetY", -350.0).toFloat()
                     )
                 )
             }
@@ -183,11 +250,7 @@ class WaifuPreferences(context: Context) {
         return list
     }
 
-    fun savePreset(preset: PresetItem) {
-        val currentList = getPresets().toMutableList()
-        currentList.removeAll { it.id == preset.id || it.name.equals(preset.name, ignoreCase = true) }
-        currentList.add(0, preset)
-
+    private fun serializePresetList(currentList: List<PresetItem>): String {
         val array = JSONArray()
         for (item in currentList) {
             val obj = JSONObject().apply {
@@ -211,42 +274,34 @@ class WaifuPreferences(context: Context) {
                 put("musicPath", item.musicPath)
                 put("isMusicEnabled", item.isMusicEnabled)
                 put("musicVolume", item.musicVolume)
+                put("isClockEnabled", item.isClockEnabled)
+                put("clockFont", item.clockFont)
+                put("clockColor", item.clockColor)
+                put("clockSize", item.clockSize)
+                put("clockFormat24h", item.clockFormat24h)
+                put("clockShowSeconds", item.clockShowSeconds)
+                put("isDateEnabled", item.isDateEnabled)
+                put("dateFormat", item.dateFormat)
+                put("clockPosition", item.clockPosition)
+                put("clockOffsetX", item.clockOffsetX)
+                put("clockOffsetY", item.clockOffsetY)
             }
             array.put(obj)
         }
-        prefs.edit { putString("user_presets_json", array.toString()) }
+        return array.toString()
+    }
+
+    fun savePreset(preset: PresetItem) {
+        val currentList = getPresets().toMutableList()
+        currentList.removeAll { it.id == preset.id || it.name.equals(preset.name, ignoreCase = true) }
+        currentList.add(0, preset)
+        prefs.edit { putString("user_presets_json", serializePresetList(currentList)) }
     }
 
     fun deletePreset(id: String) {
         val currentList = getPresets().toMutableList()
         currentList.removeAll { it.id == id }
-        val array = JSONArray()
-        for (item in currentList) {
-            val obj = JSONObject().apply {
-                put("id", item.id)
-                put("name", item.name)
-                put("skelPath", item.skelPath)
-                put("scale", item.scale)
-                put("offsetX", item.offsetX)
-                put("offsetY", item.offsetY)
-                put("selectedCharacterName", item.selectedCharacterName)
-                put("selectedVariantLabel", item.selectedVariantLabel)
-                put("wakeupAnimation", item.wakeupAnimation)
-                put("clickAnimation", item.clickAnimation)
-                put("bgType", item.bgType)
-                put("bgColor", item.bgColor)
-                put("bgImagePath", item.bgImagePath)
-                put("bgVideoPath", item.bgVideoPath)
-                put("bgScale", item.bgScale)
-                put("bgOffsetX", item.bgOffsetX)
-                put("bgOffsetY", item.bgOffsetY)
-                put("musicPath", item.musicPath)
-                put("isMusicEnabled", item.isMusicEnabled)
-                put("musicVolume", item.musicVolume)
-            }
-            array.put(obj)
-        }
-        prefs.edit { putString("user_presets_json", array.toString()) }
+        prefs.edit { putString("user_presets_json", serializePresetList(currentList)) }
     }
 
     fun getDaySchedule(dayKey: String, defaultLabel: String): DaySchedule {
@@ -319,6 +374,32 @@ class WaifuPreferences(context: Context) {
         const val KEY_RAGEBAIT_ENABLED = "key_ragebait_enabled"
         const val KEY_RAGEBAIT_PIN = "key_ragebait_pin"
         const val KEY_RAGEBAIT_LOCKOUT_TIME = "key_ragebait_lockout_time"
+
+        const val KEY_CLOCK_ENABLED = "key_clock_enabled"
+        const val KEY_CLOCK_FONT = "key_clock_font"
+        const val KEY_CLOCK_COLOR = "key_clock_color"
+        const val KEY_CLOCK_SIZE = "key_clock_size"
+        const val KEY_CLOCK_FORMAT_24H = "key_clock_format_24h"
+        const val KEY_CLOCK_SHOW_SECONDS = "key_clock_show_seconds"
+        const val KEY_CLOCK_POSITION = "key_clock_position"
+        const val KEY_CLOCK_OFFSET_X = "key_clock_offset_x"
+        const val KEY_CLOCK_OFFSET_Y = "key_clock_offset_y"
+        const val KEY_DATE_ENABLED = "key_date_enabled"
+        const val KEY_DATE_FORMAT = "key_date_format"
+
+        const val CLOCK_POS_FRONT = "FRONT"
+        const val CLOCK_POS_BACK = "BACK"
+
+        const val DATE_FORMAT_SHORT = "SHORT"
+        const val DATE_FORMAT_FULL = "FULL"
+
+        const val FONT_MONOSPACE = "MONOSPACE"
+        const val FONT_SANS_SERIF = "SANS_SERIF"
+        const val FONT_SERIF = "SERIF"
+        const val FONT_THIN = "THIN"
+        const val FONT_CONDENSED = "CONDENSED"
+        const val FONT_CURSIVE = "CURSIVE"
+        const val FONT_CASUAL = "CASUAL"
 
         const val TYPE_NONE = "NONE"
         const val TYPE_COLOR = "COLOR"

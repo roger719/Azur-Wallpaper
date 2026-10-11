@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.graphics.Color as AndroidColor
+import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
@@ -15,8 +16,14 @@ import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.service.wallpaper.WallpaperService
+import android.text.Spannable
+import android.text.SpannableString
+import android.text.style.RelativeSizeSpan
 import android.util.Base64
+import android.view.Gravity
 import android.view.MotionEvent
 import android.view.Surface
 import android.view.SurfaceHolder
@@ -30,12 +37,15 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.TextView
 import android.widget.VideoView
 import androidx.webkit.WebViewAssetLoader
 import com.example.waifuengine.data.WaifuPreferences
 import com.example.waifuengine.live2d.Live2DUrlHelper
 import java.io.File
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Locale
 
 class WaifuLive2DWallpaperService : WallpaperService() {
 
@@ -55,6 +65,7 @@ class WaifuLive2DWallpaperService : WallpaperService() {
         private var webView: WebView? = null
         private var bgVideoView: VideoView? = null
         private var bgImageView: ImageView? = null
+        private var clockTextView: TextView? = null
 
         private var musicPlayer: MediaPlayer? = null
         private var assetLoader: WebViewAssetLoader? = null
@@ -63,6 +74,15 @@ class WaifuLive2DWallpaperService : WallpaperService() {
 
         private var isCurrentlyPaused: Boolean? = null
         private var isReceiverRegistered = false
+
+        private val clockHandler = Handler(Looper.getMainLooper())
+        private val clockRunnable = object : Runnable {
+            override fun run() {
+                updateClockText()
+                val delay = if (prefs.clockShowSeconds) 1000L else 5000L
+                clockHandler.postDelayed(this, delay)
+            }
+        }
 
         private val timeReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
@@ -164,6 +184,7 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 virtualDisplay?.resize(width, height, resources.displayMetrics.densityDpi)
                 applyBackgroundScaleAndOffset()
                 reloadBackground()
+                applyClockZOrderAndVisibility()
             }
         }
 
@@ -222,6 +243,13 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                         visibility = View.GONE
                     }
 
+                    clockTextView = TextView(context).apply {
+                        layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                            gravity = Gravity.CENTER
+                        }
+                        visibility = View.GONE
+                    }
+
                     webView = WebView(context).apply {
                         layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                         settings.javaScriptEnabled = true
@@ -265,6 +293,7 @@ class WaifuLive2DWallpaperService : WallpaperService() {
 
                     rootLayout?.let { setContentView(it) }
                     reloadBackground()
+                    applyClockZOrderAndVisibility()
                 }
             }
 
@@ -273,6 +302,102 @@ class WaifuLive2DWallpaperService : WallpaperService() {
             } catch (e: Exception) {
                 e.printStackTrace()
             }
+        }
+
+        private fun updateClockText() {
+            val clockView = clockTextView ?: return
+            if (!prefs.isClockEnabled) return
+            val now = Calendar.getInstance().time
+            val timePattern = when {
+                prefs.clockFormat24h && prefs.clockShowSeconds -> "HH:mm:ss"
+                prefs.clockFormat24h -> "HH:mm"
+                prefs.clockShowSeconds -> "hh:mm:ss a"
+                else -> "hh:mm a"
+            }
+            val timeStr = SimpleDateFormat(timePattern, Locale.getDefault()).format(now)
+
+            if (prefs.isDateEnabled) {
+                val datePattern = if (prefs.dateFormat == WaifuPreferences.DATE_FORMAT_FULL) "d MMMM" else "d MMM"
+                val dateStr = SimpleDateFormat(datePattern, Locale.FRENCH).format(now)
+                val fullText = "$timeStr\n$dateStr"
+                val spannable = SpannableString(fullText)
+                val dateStart = timeStr.length + 1
+                val dateEnd = fullText.length
+                spannable.setSpan(
+                    RelativeSizeSpan(0.52f),
+                    dateStart,
+                    dateEnd,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                clockView.text = spannable
+                clockView.gravity = Gravity.CENTER
+            } else {
+                clockView.text = timeStr
+                clockView.gravity = Gravity.CENTER
+            }
+        }
+
+        private fun updateClockStyle() {
+            val clockView = clockTextView ?: return
+            if (!prefs.isClockEnabled) {
+                clockView.visibility = View.GONE
+                return
+            }
+
+            clockView.visibility = View.VISIBLE
+            clockView.textSize = prefs.clockSize
+            clockView.setTextColor(prefs.clockColor)
+            clockView.setShadowLayer(10f, 2f, 2f, 0xAA000000.toInt())
+
+            val tf = when (prefs.clockFont) {
+                WaifuPreferences.FONT_MONOSPACE -> Typeface.MONOSPACE
+                WaifuPreferences.FONT_SANS_SERIF -> Typeface.SANS_SERIF
+                WaifuPreferences.FONT_SERIF -> Typeface.SERIF
+                WaifuPreferences.FONT_THIN -> Typeface.create("sans-serif-thin", Typeface.NORMAL)
+                WaifuPreferences.FONT_CONDENSED -> Typeface.create("sans-serif-condensed", Typeface.BOLD)
+                WaifuPreferences.FONT_CURSIVE -> Typeface.create("cursive", Typeface.NORMAL)
+                WaifuPreferences.FONT_CASUAL -> Typeface.create("casual", Typeface.BOLD)
+                else -> Typeface.MONOSPACE
+            }
+            clockView.typeface = tf
+
+            val lp = FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                gravity = Gravity.CENTER
+            }
+            clockView.layoutParams = lp
+            clockView.translationX = prefs.clockOffsetX
+            clockView.translationY = prefs.clockOffsetY
+
+            updateClockText()
+        }
+
+        private fun applyClockZOrderAndVisibility() {
+            val clockView = clockTextView ?: return
+            rootLayout?.removeView(clockView)
+
+            if (!prefs.isClockEnabled) {
+                clockView.visibility = View.GONE
+                clockHandler.removeCallbacks(clockRunnable)
+                return
+            }
+
+            updateClockStyle()
+
+            if (prefs.clockPosition == WaifuPreferences.CLOCK_POS_FRONT) {
+                // DEVANT LE LIVE2D (Par-dessus WebView)
+                rootLayout?.addView(clockView)
+            } else {
+                // DERRIÈRE LE LIVE2D (Sous WebView)
+                val webViewIndex = rootLayout?.indexOfChild(webView) ?: -1
+                if (webViewIndex >= 0) {
+                    rootLayout?.addView(clockView, webViewIndex)
+                } else {
+                    rootLayout?.addView(clockView, 0)
+                }
+            }
+
+            clockHandler.removeCallbacks(clockRunnable)
+            clockHandler.post(clockRunnable)
         }
 
         private fun checkAndApplySchedule(forceReload: Boolean = false) {
@@ -491,10 +616,14 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 }
 
                 checkAndApplySchedule(forceReload = true)
+                if (prefs.isClockEnabled) {
+                    clockHandler.post(clockRunnable)
+                }
             } else {
                 webView?.onPause()
                 webView?.pauseTimers()
                 bgVideoView?.pause()
+                clockHandler.removeCallbacks(clockRunnable)
                 if (!prefs.isRagebaitEnabled) {
                     musicPlayer?.pause()
                 }
@@ -504,6 +633,7 @@ class WaifuLive2DWallpaperService : WallpaperService() {
         override fun onDestroy() {
             super.onDestroy()
             prefs.unregisterOnChangeListener(this)
+            clockHandler.removeCallbacks(clockRunnable)
             if (isReceiverRegistered) {
                 try {
                     unregisterReceiver(timeReceiver)
@@ -547,6 +677,21 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 }
                 key in listOf(WaifuPreferences.KEY_BG_SCALE, WaifuPreferences.KEY_BG_OFFSET_X, WaifuPreferences.KEY_BG_OFFSET_Y) -> {
                     applyBackgroundScaleAndOffset()
+                }
+                key in listOf(
+                    WaifuPreferences.KEY_CLOCK_ENABLED,
+                    WaifuPreferences.KEY_CLOCK_FONT,
+                    WaifuPreferences.KEY_CLOCK_COLOR,
+                    WaifuPreferences.KEY_CLOCK_SIZE,
+                    WaifuPreferences.KEY_CLOCK_FORMAT_24H,
+                    WaifuPreferences.KEY_CLOCK_SHOW_SECONDS,
+                    WaifuPreferences.KEY_CLOCK_POSITION,
+                    WaifuPreferences.KEY_CLOCK_OFFSET_X,
+                    WaifuPreferences.KEY_CLOCK_OFFSET_Y,
+                    WaifuPreferences.KEY_DATE_ENABLED,
+                    WaifuPreferences.KEY_DATE_FORMAT
+                ) -> {
+                    applyClockZOrderAndVisibility()
                 }
                 key in listOf(WaifuPreferences.KEY_MUSIC_PATH, WaifuPreferences.KEY_MUSIC_ENABLED, WaifuPreferences.KEY_RAGEBAIT_ENABLED) -> {
                     loadMusic()
