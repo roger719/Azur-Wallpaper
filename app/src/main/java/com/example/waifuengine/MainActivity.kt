@@ -339,10 +339,8 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
     var isMusicEnabled by remember { mutableStateOf(prefs.isMusicEnabled) }
     var musicVolume by remember { mutableFloatStateOf(prefs.musicVolume) }
 
-    // Planification toujours active & Mode Ragebait
-    LaunchedEffect(Unit) {
-        prefs.isScheduleEnabled = true
-    }
+    var isScheduleEnabled by remember { mutableStateOf(prefs.isScheduleEnabled) }
+    var scheduleVersion by remember { mutableIntStateOf(0) }
 
     var fallbackType by remember { mutableStateOf(prefs.scheduleFallbackType) }
     var fallbackImagePath by remember { mutableStateOf(prefs.scheduleFallbackImagePath) }
@@ -1977,12 +1975,31 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                             .padding(vertical = 8.dp),
                                         verticalArrangement = Arrangement.spacedBy(10.dp)
                                     ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("Activer la planification globale", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                            Switch(
+                                                checked = isScheduleEnabled,
+                                                onCheckedChange = { enabled ->
+                                                    isScheduleEnabled = enabled
+                                                    prefs.isScheduleEnabled = enabled
+                                                }
+                                            )
+                                        }
+
+                                        HorizontalDivider(color = nothingBorder)
+
                                         Text("Sélectionner un jour à configurer :", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
 
                                         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                             items(daysOfWeek) { (dayKey, dayLabel) ->
                                                 val isSelected = dayKey == selectedDayKey
-                                                val daySched = prefs.getDaySchedule(dayKey, dayLabel)
+                                                val daySched = remember(selectedDayKey, dayKey, scheduleVersion) {
+                                                    prefs.getDaySchedule(dayKey, dayLabel)
+                                                }
                                                 FilterChip(
                                                     selected = isSelected,
                                                     onClick = {
@@ -2029,6 +2046,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                             val updated = currentDaySchedule.copy(isEnabled = enabled)
                                                             currentDaySchedule = updated
                                                             prefs.setDaySchedule(updated)
+                                                            scheduleVersion++
                                                         }
                                                     )
                                                 }
@@ -2053,6 +2071,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                                             val updated = currentDaySchedule.copy(startHour = h, startMinute = m)
                                                                             currentDaySchedule = updated
                                                                             prefs.setDaySchedule(updated)
+                                                                            scheduleVersion++
                                                                         },
                                                                         currentDaySchedule.startHour,
                                                                         currentDaySchedule.startMinute,
@@ -2074,6 +2093,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                                             val updated = currentDaySchedule.copy(endHour = h, endMinute = m)
                                                                             currentDaySchedule = updated
                                                                             prefs.setDaySchedule(updated)
+                                                                            scheduleVersion++
                                                                         },
                                                                         currentDaySchedule.endHour,
                                                                         currentDaySchedule.endMinute,

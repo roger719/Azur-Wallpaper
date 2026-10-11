@@ -2,12 +2,17 @@ package com.example.waifuengine.service
 
 import android.R
 import android.app.Presentation
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.graphics.Color as AndroidColor
 import android.graphics.drawable.ColorDrawable
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.MediaPlayer
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.service.wallpaper.WallpaperService
@@ -56,6 +61,15 @@ class WaifuLive2DWallpaperService : WallpaperService() {
         private var targetUrl = ""
         private var lastTouchTime = 0L
 
+        private var isCurrentlyPaused: Boolean? = null
+        private var isReceiverRegistered = false
+
+        private val timeReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                checkAndApplySchedule()
+            }
+        }
+
         override fun onCreate(surfaceHolder: SurfaceHolder) {
             super.onCreate(surfaceHolder)
             setTouchEventsEnabled(true)
@@ -68,6 +82,22 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                     .addPathHandler("/files/", WebViewAssetLoader.InternalStoragePathHandler(this@WaifuLive2DWallpaperService, filesDir))
                     .build()
             } catch (_: Exception) { null }
+
+            val filter = IntentFilter().apply {
+                addAction(Intent.ACTION_TIME_TICK)
+                addAction(Intent.ACTION_TIME_CHANGED)
+                addAction(Intent.ACTION_TIMEZONE_CHANGED)
+            }
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    registerReceiver(timeReceiver, filter, RECEIVER_NOT_EXPORTED)
+                } else {
+                    registerReceiver(timeReceiver, filter)
+                }
+                isReceiverRegistered = true
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
 
             updateTargetUrl()
             loadMusic()
@@ -84,8 +114,12 @@ class WaifuLive2DWallpaperService : WallpaperService() {
             return try {
                 val bytes = file.readBytes()
                 val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
-                val ext = file.extension.lowercase()
-                val mime = if (ext == "png") "image/png" else "image/jpeg"
+                val mime = when (file.extension.lowercase()) {
+                    "png" -> "image/png"
+                    "webp" -> "image/webp"
+                    "gif" -> "image/gif"
+                    else -> "image/jpeg"
+                }
                 "data:$mime;base64,$base64"
             } catch (_: Exception) {
                 ""
@@ -94,7 +128,7 @@ class WaifuLive2DWallpaperService : WallpaperService() {
 
         override fun onTouchEvent(event: MotionEvent?) {
             super.onTouchEvent(event)
-            if (event == null) return
+            if (event == null || isSchedulePauseActive()) return
 
             val x = event.x
             val y = event.y
@@ -176,7 +210,9 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                             mp.isLooping = true
                             val vol = if (prefs.isVideoMuted) 0f else 0.8f
                             mp.setVolume(vol, vol)
-                            mp.start()
+                            if (!isSchedulePauseActive()) {
+                                mp.start()
+                            }
                         }
                     }
 
@@ -215,6 +251,7 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                                     evaluateJavascript("loadModelFromAndroid('$cleanPath')", null)
                                     evaluateJavascript("setCustomScale(${prefs.scale})", null)
                                     evaluateJavascript("setCustomOffset(${prefs.offsetX}, ${prefs.offsetY})", null)
+                                    evaluateJavascript("setModelVisible(${!isSchedulePauseActive()})", null)
                                     reloadBackground()
                                 }
                             }
@@ -238,22 +275,57 @@ class WaifuLive2DWallpaperService : WallpaperService() {
             }
         }
 
-        private fun reloadBackground() {
-            if (isScheduleDisabled()) {
-                rootLayout?.setBackgroundColor(AndroidColor.BLACK)
-                bgVideoView?.visibility = View.GONE
-                bgImageView?.visibility = View.GONE
-
-                if (prefs.scheduleFallbackType == WaifuPreferences.TYPE_IMAGE && prefs.scheduleFallbackImagePath.isNotEmpty()) {
-                    val base64 = getBgImageBase64(prefs.scheduleFallbackImagePath)
-                    if (base64.isNotEmpty()) {
-                        webView?.evaluateJavascript("setCustomBackground('IMAGE', '$base64', 1.0, 0, 0)", null)
-                    } else {
-                        webView?.evaluateJavascript("setCustomBackground('COLOR', '#000000', 1.0, 0, 0)", null)
+        private fun checkAndApplySchedule(forceReload: Boolean = false) {
+            val pauseActive = isSchedulePauseActive()
+            if (pauseActive != isCurrentlyPaused || forceReload) {
+                isCurrentlyPaused = pauseActive
+                reloadBackground()
+                if (pauseActive) {
+                    bgVideoView?.pause()
+                    if (!prefs.isRagebaitEnabled) {
+                        musicPlayer?.pause()
                     }
                 } else {
+                    if (isVisible) {
+                        if (prefs.bgType == WaifuPreferences.TYPE_VIDEO) {
+                            bgVideoView?.start()
+                        }
+                        if (musicPlayer?.isPlaying == false && (prefs.isMusicEnabled || prefs.isRagebaitEnabled)) {
+                            musicPlayer?.start()
+                        }
+                    }
+                }
+            }
+        }
+
+        private fun reloadBackground() {
+            val pauseActive = isSchedulePauseActive()
+            isCurrentlyPaused = pauseActive
+
+            webView?.evaluateJavascript("setModelVisible(${!pauseActive})", null)
+
+            if (pauseActive) {
+                bgVideoView?.visibility = View.GONE
+                bgVideoView?.stopPlayback()
+
+                if (prefs.scheduleFallbackType == WaifuPreferences.TYPE_IMAGE && prefs.scheduleFallbackImagePath.isNotEmpty() && File(prefs.scheduleFallbackImagePath).exists()) {
+                    val fallbackFile = File(prefs.scheduleFallbackImagePath)
+                    bgImageView?.setImageURI(Uri.fromFile(fallbackFile))
+                    bgImageView?.scaleType = ImageView.ScaleType.CENTER_CROP
+                    bgImageView?.scaleX = 1.0f
+                    bgImageView?.scaleY = 1.0f
+                    bgImageView?.translationX = 0f
+                    bgImageView?.translationY = 0f
+                    bgImageView?.visibility = View.VISIBLE
+                    rootLayout?.setBackgroundColor(AndroidColor.BLACK)
+                    webView?.evaluateJavascript("setCustomBackground('COLOR', 'transparent', 1.0, 0, 0)", null)
+                } else {
+                    bgImageView?.visibility = View.GONE
+                    rootLayout?.setBackgroundColor(AndroidColor.BLACK)
                     webView?.evaluateJavascript("setCustomBackground('COLOR', '#000000', 1.0, 0, 0)", null)
                 }
+                rootLayout?.requestLayout()
+                rootLayout?.invalidate()
                 return
             }
 
@@ -283,9 +355,15 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 WaifuPreferences.TYPE_VIDEO -> {
                     if (prefs.bgVideoPath.isNotEmpty() && File(prefs.bgVideoPath).exists()) {
                         rootLayout?.setBackgroundColor(AndroidColor.BLACK)
+                        webView?.evaluateJavascript("setCustomBackground('COLOR', 'transparent', 1.0, 0, 0)", null)
                         bgVideoView?.setVideoPath(prefs.bgVideoPath)
                         bgVideoView?.visibility = View.VISIBLE
-                        bgVideoView?.start()
+                        if (isVisible) {
+                            bgVideoView?.start()
+                        }
+                    } else {
+                        val colorHex = String.format("#%06X", 0xFFFFFF and prefs.bgColor)
+                        webView?.evaluateJavascript("setCustomBackground('COLOR', '$colorHex', 1.0, 0, 0)", null)
                     }
                 }
                 else -> {
@@ -314,7 +392,7 @@ class WaifuLive2DWallpaperService : WallpaperService() {
             bgVideoView?.translationX = tx
             bgVideoView?.translationY = ty
 
-            if (prefs.bgType == WaifuPreferences.TYPE_IMAGE && prefs.bgImagePath.isNotEmpty()) {
+            if (!isSchedulePauseActive() && prefs.bgType == WaifuPreferences.TYPE_IMAGE && prefs.bgImagePath.isNotEmpty()) {
                 val base64 = getBgImageBase64(prefs.bgImagePath)
                 if (base64.isNotEmpty()) {
                     webView?.evaluateJavascript(
@@ -351,7 +429,7 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                         val vol = prefs.musicVolume
                         setVolume(vol, vol)
                         setOnPreparedListener { mp ->
-                            if (!isScheduleDisabled() || prefs.isRagebaitEnabled) {
+                            if (!isSchedulePauseActive() || prefs.isRagebaitEnabled) {
                                 mp.start()
                             }
                         }
@@ -363,22 +441,41 @@ class WaifuLive2DWallpaperService : WallpaperService() {
             }
         }
 
-        private fun isScheduleDisabled(): Boolean {
+        private fun isSchedulePauseActive(): Boolean {
             if (!prefs.isScheduleEnabled) return false
+
             val now = Calendar.getInstance()
-            val dayKey = now.get(Calendar.DAY_OF_WEEK).toString()
-            val daySched = prefs.getDaySchedule(dayKey, "")
-            if (!daySched.isEnabled) return false
-
+            val currentDayInt = now.get(Calendar.DAY_OF_WEEK) // 1 = Dimanche, 2 = Lundi, ..., 7 = Samedi
             val currentMin = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
-            val startMin = daySched.startHour * 60 + daySched.startMinute
-            val endMin = daySched.endHour * 60 + daySched.endMinute
 
-            return if (startMin <= endMin) {
-                currentMin in startMin..endMin
-            } else {
-                currentMin >= startMin || currentMin <= endMin
+            // 1. Plage pour la journée d'aujourd'hui
+            val todaySched = prefs.getDaySchedule(currentDayInt.toString(), "")
+            if (todaySched.isEnabled) {
+                val startMin = todaySched.startHour * 60 + todaySched.startMinute
+                val endMin = todaySched.endHour * 60 + todaySched.endMinute
+
+                if (startMin <= endMin) {
+                    if (currentMin in startMin..endMin) return true
+                } else {
+                    // Plage de nuit débutant aujourd'hui (ex: 23h00 -> 07h00 demain)
+                    if (currentMin >= startMin) return true
+                }
             }
+
+            // 2. Plage pour la journée d'hier (pour le bout de nuit finissant aujourd'hui)
+            val yesterdayDayInt = if (currentDayInt == Calendar.SUNDAY) Calendar.SATURDAY else currentDayInt - 1
+            val yesterdaySched = prefs.getDaySchedule(yesterdayDayInt.toString(), "")
+            if (yesterdaySched.isEnabled) {
+                val startMin = yesterdaySched.startHour * 60 + yesterdaySched.startMinute
+                val endMin = yesterdaySched.endHour * 60 + yesterdaySched.endMinute
+
+                if (startMin > endMin) {
+                    // Plage de nuit débutée hier, finissant aujourd'hui (ex: jusqu'à 07h00)
+                    if (currentMin <= endMin) return true
+                }
+            }
+
+            return false
         }
 
         override fun onVisibilityChanged(visible: Boolean) {
@@ -393,12 +490,7 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                     webView?.evaluateJavascript("playNamedAnimation('$cleanAnim')", null)
                 }
 
-                if (!isScheduleDisabled()) {
-                    bgVideoView?.start()
-                    if (musicPlayer?.isPlaying == false && (prefs.isMusicEnabled || prefs.isRagebaitEnabled)) {
-                        musicPlayer?.start()
-                    }
-                }
+                checkAndApplySchedule(forceReload = true)
             } else {
                 webView?.onPause()
                 webView?.pauseTimers()
@@ -412,6 +504,12 @@ class WaifuLive2DWallpaperService : WallpaperService() {
         override fun onDestroy() {
             super.onDestroy()
             prefs.unregisterOnChangeListener(this)
+            if (isReceiverRegistered) {
+                try {
+                    unregisterReceiver(timeReceiver)
+                } catch (_: Exception) {}
+                isReceiverRegistered = false
+            }
             try {
                 musicPlayer?.release()
                 musicPlayer = null
@@ -423,28 +521,37 @@ class WaifuLive2DWallpaperService : WallpaperService() {
         }
 
         override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
-            when (key) {
-                WaifuPreferences.KEY_SKEL -> {
+            if (key == null) return
+            when {
+                key == WaifuPreferences.KEY_SKEL -> {
                     updateTargetUrl()
                     if (targetUrl.isNotEmpty()) {
                         val cleanPath = targetUrl.replace("'", "\\'")
                         webView?.evaluateJavascript("loadModelFromAndroid('$cleanPath')", null)
                     }
                 }
-                WaifuPreferences.KEY_SCALE, WaifuPreferences.KEY_OFFSET_X, WaifuPreferences.KEY_OFFSET_Y -> {
+                key in listOf(WaifuPreferences.KEY_SCALE, WaifuPreferences.KEY_OFFSET_X, WaifuPreferences.KEY_OFFSET_Y) -> {
                     webView?.evaluateJavascript("setCustomScale(${prefs.scale})", null)
                     webView?.evaluateJavascript("setCustomOffset(${prefs.offsetX}, ${prefs.offsetY})", null)
                 }
-                WaifuPreferences.KEY_BG_TYPE, WaifuPreferences.KEY_BG_IMAGE, WaifuPreferences.KEY_BG_VIDEO, WaifuPreferences.KEY_BG_COLOR -> {
-                    reloadBackground()
+                key in listOf(
+                    WaifuPreferences.KEY_BG_TYPE,
+                    WaifuPreferences.KEY_BG_IMAGE,
+                    WaifuPreferences.KEY_BG_VIDEO,
+                    WaifuPreferences.KEY_BG_COLOR,
+                    WaifuPreferences.KEY_SCHEDULE_ENABLED,
+                    WaifuPreferences.KEY_SCHEDULE_FALLBACK_TYPE,
+                    WaifuPreferences.KEY_SCHEDULE_FALLBACK_IMAGE
+                ) || key.startsWith("day_sched_") -> {
+                    checkAndApplySchedule(forceReload = true)
                 }
-                WaifuPreferences.KEY_BG_SCALE, WaifuPreferences.KEY_BG_OFFSET_X, WaifuPreferences.KEY_BG_OFFSET_Y -> {
+                key in listOf(WaifuPreferences.KEY_BG_SCALE, WaifuPreferences.KEY_BG_OFFSET_X, WaifuPreferences.KEY_BG_OFFSET_Y) -> {
                     applyBackgroundScaleAndOffset()
                 }
-                WaifuPreferences.KEY_MUSIC_PATH, WaifuPreferences.KEY_MUSIC_ENABLED, WaifuPreferences.KEY_RAGEBAIT_ENABLED -> {
+                key in listOf(WaifuPreferences.KEY_MUSIC_PATH, WaifuPreferences.KEY_MUSIC_ENABLED, WaifuPreferences.KEY_RAGEBAIT_ENABLED) -> {
                     loadMusic()
                 }
-                WaifuPreferences.KEY_MUSIC_VOLUME -> {
+                key == WaifuPreferences.KEY_MUSIC_VOLUME -> {
                     musicPlayer?.setVolume(prefs.musicVolume, prefs.musicVolume)
                 }
             }

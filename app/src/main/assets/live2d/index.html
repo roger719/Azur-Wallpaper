@@ -110,12 +110,29 @@
             loadModel(jsonPath);
         }
 
+        let isModelVisible = true;
+
+        function setModelVisible(visible) {
+            isModelVisible = !!visible;
+            const stage = document.getElementById("stage");
+            if (stage) {
+                stage.style.display = isModelVisible ? "block" : "none";
+            }
+            if (app && app.stage) {
+                app.stage.visible = isModelVisible;
+                if (app.renderer) {
+                    app.renderer.render(app.stage);
+                }
+            }
+        }
+
         window.setCustomScale = setCustomScale;
         window.setCustomOffset = setCustomOffset;
         window.setExpression = setExpression;
         window.setCustomBackground = setCustomBackground;
         window.setPointerPosition = setPointerPosition;
         window.loadModelFromAndroid = loadModelFromAndroid;
+        window.setModelVisible = setModelVisible;
 
         const GROUP = "";
         const IDLE_GROUP = "__idle__";
@@ -171,6 +188,10 @@
 
             fitModel();
             setupMotions(model);
+
+            if (app && app.stage) {
+                app.stage.visible = isModelVisible;
+            }
 
             if (currentExpression) {
                 setExpression(currentExpression);
@@ -284,6 +305,9 @@
                 app.renderer.background.alpha = 0;
             }
             stage.appendChild(app.view);
+            if (app && app.stage) {
+                app.stage.visible = isModelVisible;
+            }
             if (pendingModelPath) {
                 loadModel(pendingModelPath);
                 pendingModelPath = null;
