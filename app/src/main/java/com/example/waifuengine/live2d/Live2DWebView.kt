@@ -1,24 +1,33 @@
 package com.example.waifuengine.live2d
 
+import android.annotation.SuppressLint
+import androidx.annotation.Keep
 import android.content.Context
 import android.graphics.Color as AndroidColor
+import android.graphics.Outline
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.view.ViewOutlineProvider
+import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.fragment.app.FragmentActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.fragment.app.FragmentActivity
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewAssetLoader.AssetsPathHandler
 import androidx.webkit.WebViewAssetLoader.InternalStoragePathHandler
+import org.json.JSONObject
 
 object Live2DUrlHelper {
     fun convertToAssetUrl(context: Context, absolutePath: String): String {
@@ -34,6 +43,26 @@ object Live2DUrlHelper {
     }
 }
 
+@Keep
+private class Live2DJsBridge(
+    private val handler: Handler,
+    private val onEngineReady: () -> Unit,
+    private val onModelLoaded: (String) -> Unit
+) {
+    @Keep
+    @JavascriptInterface
+    fun onEngineReady() {
+        handler.post(onEngineReady)
+    }
+
+    @Keep
+    @JavascriptInterface
+    fun onModelLoaded(path: String?) {
+        handler.post { onModelLoaded(path.orEmpty()) }
+    }
+}
+
+@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun Live2DWebView(
     modelJsonPath: String,
@@ -41,12 +70,17 @@ fun Live2DWebView(
     offsetX: Float = 0f,
     offsetY: Float = 0f,
     doubleTapTrigger: Int = 0,
-    onModelLoaded: (() -> Unit)? = null,
+    cornerRadiusPx: Float = 0f,
+    onModelLoaded: ((loadedUrl: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
-    var isPageLoaded by remember { mutableStateOf(false) }
+    var isEngineReady by remember { mutableStateOf(false) }
+
+    val onModelLoadedState = rememberUpdatedState(onModelLoaded)
+    val cornerRadiusState = rememberUpdatedState(cornerRadiusPx)
 
     val assetLoader = remember {
         try {
@@ -62,7 +96,6 @@ fun Live2DWebView(
 
     val targetUrl = remember(modelJsonPath) { Live2DUrlHelper.convertToAssetUrl(context, modelJsonPath) }
 
-    // Masquage forcé de la barre d'état lors de tout chargement de modèle Live2D
     val enforceStatusBarHidden = {
         (context as? FragmentActivity)?.let { act ->
             val controller = WindowCompat.getInsetsController(act.window, act.window.decorView)
@@ -70,52 +103,68 @@ fun Live2DWebView(
         }
     }
 
-    // 1. Chargement instantané du modèle Live2D dès que la page est prête ou que le modèle change
-    LaunchedEffect(targetUrl, isPageLoaded, webViewRef) {
-        if (isPageLoaded && targetUrl.isNotEmpty() && webViewRef != null) {
-            enforceStatusBarHidden()
-            val cleanPath = targetUrl.replace("'", "\\'")
-            webViewRef?.evaluateJavascript("loadModelFromAndroid('$cleanPath')") {
-                enforceStatusBarHidden()
-                onModelLoaded?.invoke()
-            }
-            webViewRef?.evaluateJavascript("setCustomScale($scale)", null)
-            webViewRef?.evaluateJavascript("setCustomOffset($offsetX, $offsetY)", null)
-        }
+    fun applyTransform(view: WebView?) {
+        view ?: return
+        view.evaluateJavascript("setCustomScale($scale)", null)
+        view.evaluateJavascript("setCustomOffset($offsetX, $offsetY)", null)
     }
 
-    // 2. Mise à jour réactive EN TEMPS RÉEL des transformations (Zoom & Déplacement)
-    LaunchedEffect(scale, offsetX, offsetY, isPageLoaded, webViewRef) {
-        if (isPageLoaded && webViewRef != null) {
-            webViewRef?.evaluateJavascript("setCustomScale($scale)", null)
-            webViewRef?.evaluateJavascript("setCustomOffset($offsetX, $offsetY)", null)
-        }
+    LaunchedEffect(targetUrl, isEngineReady, webViewRef) {
+        val view = webViewRef ?: return@LaunchedEffect
+        if (!isEngineReady || targetUrl.isEmpty()) return@LaunchedEffect
+        enforceStatusBarHidden()
+        val quotedPath = JSONObject.quote(targetUrl)
+        view.evaluateJavascript("loadModelFromAndroid($quotedPath)", null)
+        applyTransform(view)
     }
 
-    // 3. Déclenchement des animations d'interaction au double-tap
+    LaunchedEffect(scale, offsetX, offsetY, isEngineReady, webViewRef) {
+        if (isEngineReady) applyTransform(webViewRef)
+    }
+
     LaunchedEffect(doubleTapTrigger) {
-        if (isPageLoaded && doubleTapTrigger > 0) {
+        if (isEngineReady && doubleTapTrigger > 0) {
             webViewRef?.evaluateJavascript("playActionAnimation()", null)
         }
     }
 
     AndroidView(
         factory = { ctx ->
+            isEngineReady = false
             WebView(ctx).apply {
                 webViewRef = this
                 settings.javaScriptEnabled = true
                 settings.allowFileAccess = true
                 settings.allowContentAccess = true
-                settings.allowFileAccessFromFileURLs = true
-                settings.allowUniversalAccessFromFileURLs = true
                 settings.domStorageEnabled = true
+                settings.mediaPlaybackRequiresUserGesture = false
+                settings.cacheMode = WebSettings.LOAD_DEFAULT
+                settings.loadsImagesAutomatically = true
+                overScrollMode = View.OVER_SCROLL_NEVER
+                isNestedScrollingEnabled = false
                 setBackgroundColor(AndroidColor.TRANSPARENT)
                 setLayerType(View.LAYER_TYPE_HARDWARE, null)
-                clipToOutline = true
-                outlineProvider = ViewOutlineProvider.BOUNDS
+
+                addJavascriptInterface(
+                    Live2DJsBridge(
+                        handler = mainHandler,
+                        onEngineReady = {
+                            isEngineReady = true
+                            enforceStatusBarHidden()
+                            evaluateJavascript("resizeToContainer()", null)
+                        },
+                        onModelLoaded = { path ->
+                            enforceStatusBarHidden()
+                            onModelLoadedState.value?.invoke(path)
+                        }
+                    ),
+                    "AzurLive2D"
+                )
 
                 @Suppress("DEPRECATION")
-                systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_FULLSCREEN
+                systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_FULLSCREEN
                 @Suppress("DEPRECATION")
                 setOnSystemUiVisibilityChangeListener {
                     enforceStatusBarHidden()
@@ -136,24 +185,31 @@ fun Live2DWebView(
 
                     override fun onPageFinished(view: WebView?, url: String?) {
                         super.onPageFinished(view, url)
-                        isPageLoaded = true
+                        view?.onResume()
+                        view?.resumeTimers()
+                        view?.evaluateJavascript("init()", null)
                         enforceStatusBarHidden()
-                        if (targetUrl.isNotEmpty()) {
-                            val cleanPath = targetUrl.replace("'", "\\'")
-                            view?.evaluateJavascript("loadModelFromAndroid('$cleanPath')") {
-                                enforceStatusBarHidden()
-                                onModelLoaded?.invoke()
-                            }
-                            view?.evaluateJavascript("setCustomScale($scale)", null)
-                            view?.evaluateJavascript("setCustomOffset($offsetX, $offsetY)", null)
-                        }
                     }
                 }
 
                 loadUrl("https://appassets.androidview.local/assets/live2d/index.html")
             }
         },
-        update = {},
-        modifier = modifier
+        update = { view ->
+            val radius = cornerRadiusState.value
+            view.outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(target: View, outline: Outline) {
+                    if (target.width <= 0 || target.height <= 0) return
+                    outline.setRoundRect(0, 0, target.width, target.height, radius.coerceAtLeast(0f))
+                }
+            }
+            view.clipToOutline = radius > 0.5f
+            view.invalidateOutline()
+        },
+        modifier = modifier.onSizeChanged { size ->
+            if (size.width > 0 && size.height > 0 && isEngineReady) {
+                webViewRef?.evaluateJavascript("resizeToContainer()", null)
+            }
+        }
     )
 }

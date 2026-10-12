@@ -91,6 +91,20 @@
             }
         }
 
+        let currentlyLoadingPath = null;
+
+        function notifyAndroid(method, arg) {
+            try {
+                if (window.AzurLive2D && typeof window.AzurLive2D[method] === "function") {
+                    if (arg === undefined) {
+                        window.AzurLive2D[method]();
+                    } else {
+                        window.AzurLive2D[method](arg);
+                    }
+                }
+            } catch (e) {}
+        }
+
         function loadModelFromAndroid(jsonPath) {
             if (!jsonPath) return;
             if (!jsonPath.startsWith("file://") && !jsonPath.startsWith("http")) {
@@ -100,11 +114,17 @@
                 if (currentExpression) {
                     setExpression(currentExpression);
                 }
+                fitModel();
+                notifyAndroid("onModelLoaded", jsonPath);
                 return;
             }
-            currentLoadedPath = jsonPath;
+            if (jsonPath === currentlyLoadingPath) {
+                return;
+            }
+            currentlyLoadingPath = jsonPath;
             if (!app) {
                 pendingModelPath = jsonPath;
+                init();
                 return;
             }
             loadModel(jsonPath);
@@ -172,6 +192,7 @@
                 newModel = await PIXI.live2d.Live2DModel.from(path, { autoInteract: false });
             } catch (e) {
                 console.error("Erreur de chargement du modèle Live2D :", path, e);
+                currentlyLoadingPath = null;
                 return false;
             }
             if (token !== loadToken) {
@@ -184,6 +205,8 @@
                 model.destroy();
             }
             model = newModel;
+            currentLoadedPath = path;
+            currentlyLoadingPath = null;
             app.stage.addChild(model);
 
             fitModel();
@@ -197,7 +220,8 @@
                 setExpression(currentExpression);
             }
 
-            if (app.renderer) app.renderer.render(app.stage);
+            if (app && app.renderer) app.renderer.render(app.stage);
+            notifyAndroid("onModelLoaded", path);
             return true;
         }
 
@@ -226,7 +250,7 @@
             model.x = (screenW / 2) + (customOffsetX * worldToScreenX);
             model.y = (screenH / 2) - (customOffsetY * worldToScreenY);
 
-            if (app.renderer) {
+            if (app && app.renderer) {
                 app.renderer.render(app.stage);
             }
         }
@@ -288,18 +312,64 @@
         window.playActionAnimation = playActionAnimation;
         window.playNamedAnimation = playNamedAnimation;
 
+        let isInitialized = false;
+        let initAttempts = 0;
+
+        function readStageSize() {
+            const stage = document.getElementById("stage");
+            const w = (stage && stage.clientWidth) || window.innerWidth || 0;
+            const h = (stage && stage.clientHeight) || window.innerHeight || 0;
+            return { w: w, h: h };
+        }
+
+        function resizeToContainer(explicitW, explicitH) {
+            const measured = readStageSize();
+            const w = explicitW || measured.w;
+            const h = explicitH || measured.h;
+            if (!w || !h || w <= 1 || h <= 1) {
+                if (!isInitialized) init();
+                return;
+            }
+            if (!app) {
+                init();
+                return;
+            }
+            const screen = app.renderer && app.renderer.screen;
+            if (!screen || screen.width !== w || screen.height !== h) {
+                app.renderer.resize(w, h);
+            }
+            fitModel();
+        }
+
         async function init() {
             const stage = document.getElementById("stage");
+            if (!stage) return;
+
+            const size = readStageSize();
+            if (size.w <= 1 || size.h <= 1) {
+                if (++initAttempts < 180) {
+                    requestAnimationFrame(init);
+                }
+                return;
+            }
+
+            if (isInitialized) {
+                notifyAndroid("onEngineReady");
+                resizeToContainer(size.w, size.h);
+                return;
+            }
+            isInitialized = true;
+
             app = new PIXI.Application({
-                width: window.innerWidth || 800,
-                height: window.innerHeight || 1280,
+                width: size.w,
+                height: size.h,
                 transparent: true,
                 backgroundAlpha: 0,
                 clearBeforeRender: true,
                 antialias: true,
                 autoDensity: true,
                 resolution: window.devicePixelRatio || 1,
-                sharedTicker: true
+                sharedTicker: false
             });
             if (app.renderer && app.renderer.background) {
                 app.renderer.background.alpha = 0;
@@ -308,12 +378,30 @@
             if (app && app.stage) {
                 app.stage.visible = isModelVisible;
             }
+            notifyAndroid("onEngineReady");
             if (pendingModelPath) {
-                loadModel(pendingModelPath);
+                const pending = pendingModelPath;
                 pendingModelPath = null;
+                loadModel(pending);
             }
         }
-        window.onload = init;
+
+        window.resizeToContainer = resizeToContainer;
+        window.init = init;
+
+        window.addEventListener("resize", () => resizeToContainer());
+        if (typeof ResizeObserver !== "undefined") {
+            const stage = document.getElementById("stage");
+            if (stage) {
+                new ResizeObserver(() => resizeToContainer()).observe(stage);
+            }
+        }
+
+        if (document.readyState === "complete" || document.readyState === "interactive") {
+            setTimeout(init, 0);
+        } else {
+            document.addEventListener("DOMContentLoaded", init);
+        }
     </script>
 </body>
 </html>

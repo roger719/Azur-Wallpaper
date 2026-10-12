@@ -4,13 +4,11 @@ import android.app.TimePickerDialog
 import android.app.WallpaperManager
 import android.content.ComponentName
 import android.content.Intent
-import android.graphics.BitmapFactory
 import android.graphics.Color as AndroidColor
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
-import android.widget.VideoView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -21,7 +19,6 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -54,22 +51,27 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.util.lerp
+import androidx.compose.ui.zIndex
+import com.example.waifuengine.ui.WallpaperPreviewBackground
+import kotlin.math.roundToInt
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -79,6 +81,7 @@ import com.example.waifuengine.data.CharacterRepository
 import com.example.waifuengine.data.FileNode
 import com.example.waifuengine.data.PresetItem
 import com.example.waifuengine.data.WaifuPreferences
+import com.example.waifuengine.live2d.Live2DUrlHelper
 import com.example.waifuengine.live2d.Live2DWebView
 import com.example.waifuengine.service.WaifuLive2DWallpaperService
 import com.example.waifuengine.ui.theme.WaifuEngineTheme
@@ -311,12 +314,18 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
     }
 
     var isModelLoading by remember { mutableStateOf(false) }
+    var modelLoadGeneration by remember { mutableIntStateOf(0) }
 
-    // Transitoire propre lors du changement de modèle
     LaunchedEffect(currentSkelPath) {
-        if (currentSkelPath.isNotEmpty()) {
-            isModelLoading = true
-            delay(400L)
+        val generation = modelLoadGeneration + 1
+        modelLoadGeneration = generation
+        if (currentSkelPath.isEmpty()) {
+            isModelLoading = false
+            return@LaunchedEffect
+        }
+        isModelLoading = true
+        delay(8000L)
+        if (modelLoadGeneration == generation) {
             isModelLoading = false
         }
     }
@@ -425,20 +434,18 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
     // Onglet actif (0 = personnage, 1 = personnalisation, 2 = planification)
     var activeTab by remember { mutableIntStateOf(prefs.activeTab.coerceIn(0, 2)) }
     var isFullscreen by remember { mutableStateOf(false) }
-    var isFullscreenLoading by remember { mutableStateOf(false) }
+    var isFullscreenUiVisible by remember { mutableStateOf(true) }
+    var cardOffset by remember { mutableStateOf(IntOffset.Zero) }
+    var cardSize by remember { mutableStateOf(IntSize.Zero) }
+    var rootSize by remember { mutableStateOf(IntSize.Zero) }
 
     LaunchedEffect(activeTab) {
         prefs.activeTab = activeTab
     }
 
-    // Gestion de l'indicateur de chargement lors de l'ouverture du plein écran
     LaunchedEffect(isFullscreen) {
         if (isFullscreen) {
-            isFullscreenLoading = true
-            delay(400L)
-            isFullscreenLoading = false
-        } else {
-            isFullscreenLoading = false
+            isFullscreenUiVisible = true
         }
     }
 
@@ -1742,8 +1749,34 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
         }
     }
 
+    val density = LocalDensity.current
+    val fsTransition = updateTransition(targetState = isFullscreen, label = "previewFullscreen")
+    val fsProgress by fsTransition.animateFloat(
+        transitionSpec = { tween(220, easing = FastOutSlowInEasing) },
+        label = "previewFsProgress"
+    ) { fullscreen -> if (fullscreen) 1f else 0f }
+    val previewOffset = IntOffset(
+        lerp(cardOffset.x.toFloat(), 0f, fsProgress).roundToInt(),
+        lerp(cardOffset.y.toFloat(), 0f, fsProgress).roundToInt()
+    )
+    val previewWidth = lerp(
+        cardSize.width.coerceAtLeast(1).toFloat(),
+        rootSize.width.coerceAtLeast(cardSize.width.coerceAtLeast(1)).toFloat(),
+        fsProgress
+    ).roundToInt().coerceAtLeast(1)
+    val previewHeight = lerp(
+        cardSize.height.coerceAtLeast(1).toFloat(),
+        rootSize.height.coerceAtLeast(cardSize.height.coerceAtLeast(1)).toFloat(),
+        fsProgress
+    ).roundToInt().coerceAtLeast(1)
+    val previewCorner = lerp(28f, 0f, fsProgress).dp
+
     // CONTENEUR RACINE
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .onSizeChanged { rootSize = it }
+    ) {
         // COUCHE 1 : ÉCRAN PRINCIPAL D'ÉDITION & APERÇU DANS LA CARTE
         Column(
             modifier = Modifier
@@ -1772,201 +1805,25 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                 )
             }
 
-            // Zone d'Aperçu Carte (Taille Fixe 380dp)
+            // Emplacement de l'aperçu carte (le Live2D unique est dessiné en overlay)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(380.dp)
                     .padding(horizontal = 16.dp)
-                    .clip(RoundedCornerShape(28.dp))
-                    .clipToBounds()
-                    .then(customBgModifier)
-                    .border(1.dp, nothingBorder, RoundedCornerShape(28.dp))
-                    .then(live2DGestureModifier)
+                    .onGloballyPositioned { coords ->
+                        val pos = coords.positionInRoot()
+                        cardOffset = IntOffset(pos.x.roundToInt(), pos.y.roundToInt())
+                        cardSize = coords.size
+                    }
             ) {
-                // RENDU DU FOND
-                when (bgType) {
-                    WaifuPreferences.TYPE_COLOR -> {
-                        Box(modifier = Modifier.fillMaxSize().background(pickedColor))
-                    }
-                    WaifuPreferences.TYPE_IMAGE -> {
-                        if (prefs.bgImagePath.isNotEmpty() && File(prefs.bgImagePath).exists()) {
-                            val bitmap = remember(prefs.bgImagePath) {
-                                BitmapFactory.decodeFile(prefs.bgImagePath)?.asImageBitmap()
-                            }
-                            if (bitmap != null) {
-                                Image(
-                                    bitmap = bitmap,
-                                    contentDescription = "Fond d'écran",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .graphicsLayer {
-                                            scaleX = prefs.bgScale
-                                            scaleY = prefs.bgScale
-                                            translationX = prefs.bgOffsetX
-                                            translationY = prefs.bgOffsetY
-                                        }
-                                )
-                            }
-                        }
-                    }
-                    WaifuPreferences.TYPE_VIDEO -> {
-                        if (prefs.bgVideoPath.isNotEmpty() && File(prefs.bgVideoPath).exists()) {
-                            AndroidView(
-                                factory = { ctx ->
-                                    VideoView(ctx).apply {
-                                        setVideoPath(prefs.bgVideoPath)
-                                        setOnPreparedListener { mp ->
-                                            mp.isLooping = true
-                                            val vol = if (isVideoMuted) 0f else 0.8f
-                                            mp.setVolume(vol, vol)
-                                            mp.start()
-                                        }
-                                    }
-                                },
-                                update = { view ->
-                                    if (!view.isPlaying) view.start()
-                                },
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .graphicsLayer {
-                                        scaleX = prefs.bgScale
-                                        scaleY = prefs.bgScale
-                                        translationX = prefs.bgOffsetX
-                                        translationY = prefs.bgOffsetY
-                                    }
-                            )
-                        }
-                    }
-                }
-
-                // RENDU DU MODÈLE EN APERÇU CARTE
-                key(isFullscreen, clockPosition) {
-                    if (!isFullscreen) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(28.dp))
-                                .clipToBounds()
-                        ) {
-                            if (clockPosition == WaifuPreferences.CLOCK_POS_BACK) {
-                                DigitalClockOverlay(
-                                    isClockEnabled = isClockEnabled,
-                                    clockFont = clockFont,
-                                    clockColor = clockColor,
-                                    clockSizeSp = clockSize,
-                                    clockFormat24h = clockFormat24h,
-                                    clockShowSeconds = clockShowSeconds,
-                                    isDateEnabled = isDateEnabled,
-                                    dateFormat = dateFormat,
-                                    clockOffsetXPx = clockOffsetX,
-                                    clockOffsetYPx = clockOffsetY,
-                                    onPositionDrag = onClockDrag
-                                )
-                            }
-
-                            Live2DWebView(
-                                modelJsonPath = currentSkelPath,
-                                scale = currentScale,
-                                offsetX = currentOffsetX,
-                                offsetY = currentOffsetY,
-                                doubleTapTrigger = doubleTapTrigger,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(RoundedCornerShape(28.dp))
-                                    .clipToBounds()
-                            )
-
-                            if (clockPosition == WaifuPreferences.CLOCK_POS_FRONT) {
-                                DigitalClockOverlay(
-                                    isClockEnabled = isClockEnabled,
-                                    clockFont = clockFont,
-                                    clockColor = clockColor,
-                                    clockSizeSp = clockSize,
-                                    clockFormat24h = clockFormat24h,
-                                    clockShowSeconds = clockShowSeconds,
-                                    isDateEnabled = isDateEnabled,
-                                    dateFormat = dateFormat,
-                                    clockOffsetXPx = clockOffsetX,
-                                    clockOffsetYPx = clockOffsetY,
-                                    onPositionDrag = onClockDrag
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // VOILE OBSCURCISSANT & INDICATEUR DE CHARGEMENT
-                TopLevelAnimatedVisibility(
-                    visible = isModelLoading,
-                    enter = fadeIn(tween(180, easing = LinearOutSlowInEasing)),
-                    exit = fadeOut(tween(250, easing = FastOutLinearInEasing)),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color(0xFF08132B).copy(alpha = 0.65f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        NothingLoadingIndicator()
-                    }
-                }
-
-                // Boutons d'Aperçu (Plein Écran & Sauvegarder)
-                Box(modifier = Modifier.fillMaxSize()) {
-                    Row(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(bottom = 12.dp, end = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Surface(
-                            onClick = { isFullscreen = true },
-                            shape = CircleShape,
-                            color = Color(0xFFEDF4FC).copy(alpha = 0.95f),
-                            border = BorderStroke(1.dp, nothingBorder),
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                Canvas(modifier = Modifier.size(16.dp)) {
-                                    val w = size.width
-                                    val h = size.height
-                                    val strokeW = 2.dp.toPx()
-
-                                    drawLine(Color(0xFF0D1B3E), Offset(w * 0.45f, h * 0.45f), Offset(0f, 0f), strokeWidth = strokeW, cap = StrokeCap.Round)
-                                    drawLine(Color(0xFF0D1B3E), Offset(0f, 0f), Offset(w * 0.32f, 0f), strokeWidth = strokeW, cap = StrokeCap.Round)
-                                    drawLine(Color(0xFF0D1B3E), Offset(0f, 0f), Offset(0f, h * 0.32f), strokeWidth = strokeW, cap = StrokeCap.Round)
-
-                                    drawLine(Color(0xFF0D1B3E), Offset(w * 0.55f, h * 0.55f), Offset(w, h), strokeWidth = strokeW, cap = StrokeCap.Round)
-                                    drawLine(Color(0xFF0D1B3E), Offset(w, h), Offset(w * 0.68f, h), strokeWidth = strokeW, cap = StrokeCap.Round)
-                                    drawLine(Color(0xFF0D1B3E), Offset(w, h), Offset(w, h * 0.68f), strokeWidth = strokeW, cap = StrokeCap.Round)
-                                }
-                            }
-                        }
-
-                        Surface(
-                            onClick = { showSavePresetDialog = true },
-                            shape = CircleShape,
-                            color = Color(0xFFEDF4FC).copy(alpha = 0.95f),
-                            border = BorderStroke(1.dp, nothingBorder)
-                        ) {
-                            Text(
-                                text = "sauvegarder",
-                                color = Color(0xFF0D1B3E),
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                            )
-                        }
-                    }
-                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(28.dp))
+                        .then(customBgModifier)
+                        .border(1.dp, nothingBorder, RoundedCornerShape(28.dp))
+                )
             }
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -3132,135 +2989,80 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
             Spacer(modifier = Modifier.height(20.dp))
         }
 
-        // COUCHE 2 : OVERLAY PLEIN ÉCRAN FLUIDE ET ISOLÉ
-        TopLevelAnimatedVisibility(
-            visible = isFullscreen,
-            enter = fadeIn(tween(200, easing = LinearOutSlowInEasing)) + scaleIn(
-                initialScale = 0.96f,
-                animationSpec = tween(200, easing = LinearOutSlowInEasing)
-            ),
-            exit = fadeOut(tween(160, easing = FastOutLinearInEasing)) + scaleOut(
-                targetScale = 0.96f,
-                animationSpec = tween(160, easing = FastOutLinearInEasing)
-            )
-        ) {
+        // Aperçu Live2D unique : carte et plein écran partagent le même WebView
+        if (cardSize.width > 0 && cardSize.height > 0) {
+            val cornerRadiusPx = with(density) { previewCorner.toPx() }
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color(0xFF08132B))
+                    .offset { previewOffset }
+                    .size(
+                        width = with(density) { previewWidth.toDp() },
+                        height = with(density) { previewHeight.toDp() }
+                    )
+                    .zIndex(if (fsProgress > 0.01f) 4f else 2f)
+                    .clip(RoundedCornerShape(previewCorner))
+                    .clipToBounds()
                     .then(customBgModifier)
+                    .border(
+                        1.dp,
+                        nothingBorder.copy(alpha = (1f - fsProgress).coerceIn(0f, 1f)),
+                        RoundedCornerShape(previewCorner)
+                    )
                     .then(live2DGestureModifier)
             ) {
-                when (bgType) {
-                    WaifuPreferences.TYPE_COLOR -> {
-                        Box(modifier = Modifier.fillMaxSize().background(pickedColor))
-                    }
-                    WaifuPreferences.TYPE_IMAGE -> {
-                        if (prefs.bgImagePath.isNotEmpty() && File(prefs.bgImagePath).exists()) {
-                            val bitmap = remember(prefs.bgImagePath) {
-                                BitmapFactory.decodeFile(prefs.bgImagePath)?.asImageBitmap()
-                            }
-                            if (bitmap != null) {
-                                Image(
-                                    bitmap = bitmap,
-                                    contentDescription = "Fond d'écran",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .graphicsLayer {
-                                            scaleX = prefs.bgScale
-                                            scaleY = prefs.bgScale
-                                            translationX = prefs.bgOffsetX
-                                            translationY = prefs.bgOffsetY
-                                        }
-                                )
-                            }
+                WallpaperPreviewBackground(
+                    bgType = bgType,
+                    pickedColor = pickedColor,
+                    bgImagePath = prefs.bgImagePath,
+                    bgVideoPath = prefs.bgVideoPath,
+                    bgScale = prefs.bgScale,
+                    bgOffsetX = prefs.bgOffsetX,
+                    bgOffsetY = prefs.bgOffsetY,
+                    isVideoMuted = isVideoMuted
+                )
+
+                DigitalClockOverlay(
+                    isClockEnabled = isClockEnabled,
+                    clockFont = clockFont,
+                    clockColor = clockColor,
+                    clockSizeSp = clockSize,
+                    clockFormat24h = clockFormat24h,
+                    clockShowSeconds = clockShowSeconds,
+                    isDateEnabled = isDateEnabled,
+                    dateFormat = dateFormat,
+                    clockOffsetXPx = clockOffsetX,
+                    clockOffsetYPx = clockOffsetY,
+                    onPositionDrag = onClockDrag,
+                    modifier = Modifier.zIndex(
+                        if (clockPosition == WaifuPreferences.CLOCK_POS_FRONT) 2f else 0f
+                    )
+                )
+
+                Live2DWebView(
+                    modelJsonPath = currentSkelPath,
+                    scale = currentScale,
+                    offsetX = currentOffsetX,
+                    offsetY = currentOffsetY,
+                    doubleTapTrigger = doubleTapTrigger,
+                    cornerRadiusPx = cornerRadiusPx,
+                    onModelLoaded = { loadedUrl ->
+                        val expected = Live2DUrlHelper.convertToAssetUrl(context, currentSkelPath)
+                        if (loadedUrl.isEmpty() || loadedUrl == expected) {
+                            isModelLoading = false
                         }
-                    }
-                    WaifuPreferences.TYPE_VIDEO -> {
-                        if (prefs.bgVideoPath.isNotEmpty() && File(prefs.bgVideoPath).exists()) {
-                            AndroidView(
-                                factory = { ctx ->
-                                    VideoView(ctx).apply {
-                                        setVideoPath(prefs.bgVideoPath)
-                                        setOnPreparedListener { mp ->
-                                            mp.isLooping = true
-                                            val vol = if (isVideoMuted) 0f else 0.8f
-                                            mp.setVolume(vol, vol)
-                                            mp.start()
-                                        }
-                                    }
-                                },
-                                update = { view ->
-                                    if (!view.isPlaying) view.start()
-                                },
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .graphicsLayer {
-                                        scaleX = prefs.bgScale
-                                        scaleY = prefs.bgScale
-                                        translationX = prefs.bgOffsetX
-                                        translationY = prefs.bgOffsetY
-                                    }
-                            )
-                        }
-                    }
-                }
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(1f)
+                )
 
-                // RENDU EN PLEIN ÉCRAN
-                key(isFullscreen, clockPosition) {
-                    if (isFullscreen) {
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            if (clockPosition == WaifuPreferences.CLOCK_POS_BACK) {
-                                DigitalClockOverlay(
-                                    isClockEnabled = isClockEnabled,
-                                    clockFont = clockFont,
-                                    clockColor = clockColor,
-                                    clockSizeSp = clockSize,
-                                    clockFormat24h = clockFormat24h,
-                                    clockShowSeconds = clockShowSeconds,
-                                    isDateEnabled = isDateEnabled,
-                                    dateFormat = dateFormat,
-                                    clockOffsetXPx = clockOffsetX,
-                                    clockOffsetYPx = clockOffsetY,
-                                    onPositionDrag = onClockDrag
-                                )
-                            }
-
-                            Live2DWebView(
-                                modelJsonPath = currentSkelPath,
-                                scale = currentScale,
-                                offsetX = currentOffsetX,
-                                offsetY = currentOffsetY,
-                                doubleTapTrigger = doubleTapTrigger,
-                                modifier = Modifier.fillMaxSize()
-                            )
-
-                            if (clockPosition == WaifuPreferences.CLOCK_POS_FRONT) {
-                                DigitalClockOverlay(
-                                    isClockEnabled = isClockEnabled,
-                                    clockFont = clockFont,
-                                    clockColor = clockColor,
-                                    clockSizeSp = clockSize,
-                                    clockFormat24h = clockFormat24h,
-                                    clockShowSeconds = clockShowSeconds,
-                                    isDateEnabled = isDateEnabled,
-                                    dateFormat = dateFormat,
-                                    clockOffsetXPx = clockOffsetX,
-                                    clockOffsetYPx = clockOffsetY,
-                                    onPositionDrag = onClockDrag
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // VOILE OBSCURCISSANT & INDICATEUR DE CHARGEMENT
                 TopLevelAnimatedVisibility(
-                    visible = isFullscreenLoading || isModelLoading,
+                    visible = isModelLoading,
                     enter = fadeIn(tween(180, easing = LinearOutSlowInEasing)),
                     exit = fadeOut(tween(250, easing = FastOutLinearInEasing)),
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(3f)
                 ) {
                     Box(
                         modifier = Modifier
@@ -3272,71 +3074,163 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     }
                 }
 
-                // BARRE ET COMMANDES EN SURIMPOSITION DU PLEIN ÉCRAN
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        onClick = { isFullscreen = false },
-                        shape = CircleShape,
-                        color = Color(0xFFEDF4FC).copy(alpha = 0.95f),
-                        border = BorderStroke(1.dp, nothingBorder),
-                        modifier = Modifier.size(44.dp)
+                if (fsProgress < 0.85f) {
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(bottom = 12.dp, end = 12.dp)
+                            .graphicsLayer { alpha = (1f - fsProgress * 1.4f).coerceIn(0f, 1f) }
+                            .zIndex(5f),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier.fillMaxSize()
+                        Surface(
+                            onClick = { isFullscreen = true },
+                            shape = CircleShape,
+                            color = Color(0xFFEDF4FC).copy(alpha = 0.95f),
+                            border = BorderStroke(1.dp, nothingBorder),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                Canvas(modifier = Modifier.size(16.dp)) {
+                                    val w = size.width
+                                    val h = size.height
+                                    val strokeW = 2.dp.toPx()
+
+                                    drawLine(Color(0xFF0D1B3E), Offset(w * 0.45f, h * 0.45f), Offset(0f, 0f), strokeWidth = strokeW, cap = StrokeCap.Round)
+                                    drawLine(Color(0xFF0D1B3E), Offset(0f, 0f), Offset(w * 0.32f, 0f), strokeWidth = strokeW, cap = StrokeCap.Round)
+                                    drawLine(Color(0xFF0D1B3E), Offset(0f, 0f), Offset(0f, h * 0.32f), strokeWidth = strokeW, cap = StrokeCap.Round)
+
+                                    drawLine(Color(0xFF0D1B3E), Offset(w * 0.55f, h * 0.55f), Offset(w, h), strokeWidth = strokeW, cap = StrokeCap.Round)
+                                    drawLine(Color(0xFF0D1B3E), Offset(w, h), Offset(w * 0.68f, h), strokeWidth = strokeW, cap = StrokeCap.Round)
+                                    drawLine(Color(0xFF0D1B3E), Offset(w, h), Offset(w, h * 0.68f), strokeWidth = strokeW, cap = StrokeCap.Round)
+                                }
+                            }
+                        }
+
+                        Surface(
+                            onClick = { showSavePresetDialog = true },
+                            shape = CircleShape,
+                            color = Color(0xFFEDF4FC).copy(alpha = 0.95f),
+                            border = BorderStroke(1.dp, nothingBorder)
                         ) {
                             Text(
-                                text = "←",
-                                fontSize = 22.sp,
+                                text = "sauvegarder",
+                                color = Color(0xFF0D1B3E),
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF0D1B3E)
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                             )
                         }
                     }
-
-                    Button(
-                        onClick = {
-                            isFullscreen = false
-                            applyWallpaper()
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = nothingBlack,
-                            contentColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(20.dp)
-                    ) {
-                        Text("APPLIQUER", fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-                    }
                 }
 
-                Surface(
-                    onClick = { showTransformDialog = true },
-                    shape = CircleShape,
-                    color = Color(0xFFEDF4FC).copy(alpha = 0.95f),
-                    border = BorderStroke(1.dp, nothingBorder),
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .navigationBarsPadding()
-                        .padding(bottom = 24.dp, start = 20.dp)
-                        .size(52.dp)
-                ) {
+                if (fsProgress > 0.2f) {
                     Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .zIndex(4f)
+                            .pointerInput(isFullscreen, isFullscreenUiVisible) {
+                                detectTapGestures(
+                                    onDoubleTap = {
+                                        if (isFullscreen) {
+                                            isFullscreenUiVisible = !isFullscreenUiVisible
+                                        }
+                                    },
+                                    onTap = {
+                                        if (isFullscreen && !isFullscreenUiVisible) {
+                                            isFullscreenUiVisible = true
+                                        }
+                                    }
+                                )
+                            }
+                    )
+
+                    TopLevelAnimatedVisibility(
+                        visible = isFullscreen && isFullscreenUiVisible,
+                        enter = fadeIn(tween(180, easing = LinearOutSlowInEasing)),
+                        exit = fadeOut(tween(200, easing = FastOutLinearInEasing)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .zIndex(6f)
                     ) {
-                        Text(
-                            text = "⚙",
-                            fontSize = 22.sp,
-                            color = Color(0xFF0D1B3E),
-                            fontFamily = FontFamily.Monospace
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .statusBarsPadding()
+                                .padding(horizontal = 20.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                onClick = { isFullscreen = false },
+                                shape = CircleShape,
+                                color = Color(0xFFEDF4FC).copy(alpha = 0.95f),
+                                border = BorderStroke(1.dp, nothingBorder),
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    Text(
+                                        text = "←",
+                                        fontSize = 22.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF0D1B3E)
+                                    )
+                                }
+                            }
+
+                            Button(
+                                onClick = {
+                                    isFullscreen = false
+                                    applyWallpaper()
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = nothingBlack,
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(20.dp)
+                            ) {
+                                Text("APPLIQUER", fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    TopLevelAnimatedVisibility(
+                        visible = isFullscreen && isFullscreenUiVisible,
+                        enter = fadeIn(tween(180, easing = LinearOutSlowInEasing)),
+                        exit = fadeOut(tween(200, easing = FastOutLinearInEasing)),
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .navigationBarsPadding()
+                            .padding(bottom = 24.dp, start = 20.dp)
+                            .zIndex(6f)
+                    ) {
+                        Surface(
+                            onClick = { showTransformDialog = true },
+                            shape = CircleShape,
+                            color = Color(0xFFEDF4FC).copy(alpha = 0.95f),
+                            border = BorderStroke(1.dp, nothingBorder),
+                            modifier = Modifier.size(52.dp)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                Text(
+                                    text = "⚙",
+                                    fontSize = 22.sp,
+                                    color = Color(0xFF0D1B3E),
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
                     }
                 }
             }

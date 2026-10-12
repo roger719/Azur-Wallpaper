@@ -1,6 +1,8 @@
 package com.example.waifuengine.service
 
 import android.R
+import android.annotation.SuppressLint
+import android.app.KeyguardManager
 import android.app.Presentation
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -42,6 +44,7 @@ import android.widget.VideoView
 import androidx.webkit.WebViewAssetLoader
 import com.example.waifuengine.data.WaifuPreferences
 import com.example.waifuengine.live2d.Live2DUrlHelper
+import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -107,11 +110,16 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 addAction(Intent.ACTION_TIME_TICK)
                 addAction(Intent.ACTION_TIME_CHANGED)
                 addAction(Intent.ACTION_TIMEZONE_CHANGED)
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_USER_PRESENT)
+                addAction("android.intent.action.KEYGUARD_CHANGED")
             }
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    registerReceiver(timeReceiver, filter, RECEIVER_NOT_EXPORTED)
+                    registerReceiver(timeReceiver, filter, RECEIVER_EXPORTED)
                 } else {
+                    @SuppressLint("UnspecifiedRegisterReceiverFlag")
                     registerReceiver(timeReceiver, filter)
                 }
                 isReceiverRegistered = true
@@ -164,8 +172,8 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 MotionEvent.ACTION_UP -> {
                     val customClickAnim = prefs.clickAnimation
                     if (customClickAnim.isNotEmpty()) {
-                        val cleanAnim = customClickAnim.replace("'", "\\'")
-                        webView?.evaluateJavascript("playNamedAnimation('$cleanAnim')", null)
+                        val quotedAnim = JSONObject.quote(customClickAnim)
+                        webView?.evaluateJavascript("playNamedAnimation($quotedAnim)", null)
                     } else {
                         webView?.evaluateJavascript("playActionAnimation()", null)
                     }
@@ -185,6 +193,7 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 applyBackgroundScaleAndOffset()
                 reloadBackground()
                 applyClockZOrderAndVisibility()
+                webView?.evaluateJavascript("resizeToContainer()", null)
             }
         }
 
@@ -255,8 +264,6 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                         settings.javaScriptEnabled = true
                         settings.allowFileAccess = true
                         settings.allowContentAccess = true
-                        settings.allowFileAccessFromFileURLs = true
-                        settings.allowUniversalAccessFromFileURLs = true
                         settings.domStorageEnabled = true
                         settings.mediaPlaybackRequiresUserGesture = false
                         setBackgroundColor(AndroidColor.TRANSPARENT)
@@ -275,8 +282,8 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                                 view?.onResume()
                                 view?.resumeTimers()
                                 if (targetUrl.isNotEmpty()) {
-                                    val cleanPath = targetUrl.replace("'", "\\'")
-                                    evaluateJavascript("loadModelFromAndroid('$cleanPath')", null)
+                                    val quotedPath = JSONObject.quote(targetUrl)
+                                    evaluateJavascript("loadModelFromAndroid($quotedPath)", null)
                                     evaluateJavascript("setCustomScale(${prefs.scale})", null)
                                     evaluateJavascript("setCustomOffset(${prefs.offsetX}, ${prefs.offsetY})", null)
                                     evaluateJavascript("setModelVisible(${!isSchedulePauseActive()})", null)
@@ -371,11 +378,17 @@ class WaifuLive2DWallpaperService : WallpaperService() {
             updateClockText()
         }
 
+        private fun isKeyguardLocked(): Boolean {
+            val km = getSystemService(KEYGUARD_SERVICE) as? KeyguardManager
+            return km?.isKeyguardLocked ?: false
+        }
+
         private fun applyClockZOrderAndVisibility() {
             val clockView = clockTextView ?: return
             rootLayout?.removeView(clockView)
 
-            if (!prefs.isClockEnabled) {
+            // MASQUER L'HORLOGE SI ELLE EST DÉSACTIVÉE OU SI L'ÉCRAN EST VERROUILLÉ (KEYGUARD)
+            if (!prefs.isClockEnabled || isKeyguardLocked()) {
                 clockView.visibility = View.GONE
                 clockHandler.removeCallbacks(clockRunnable)
                 return
@@ -621,7 +634,6 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 }
             } else {
                 webView?.onPause()
-                webView?.pauseTimers()
                 bgVideoView?.pause()
                 clockHandler.removeCallbacks(clockRunnable)
                 if (!prefs.isRagebaitEnabled) {
@@ -641,6 +653,14 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 isReceiverRegistered = false
             }
             try {
+                bgVideoView?.stopPlayback()
+                bgVideoView = null
+                webView?.apply {
+                    stopLoading()
+                    onPause()
+                    destroy()
+                }
+                webView = null
                 musicPlayer?.release()
                 musicPlayer = null
                 presentation?.dismiss()
@@ -656,8 +676,8 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 key == WaifuPreferences.KEY_SKEL -> {
                     updateTargetUrl()
                     if (targetUrl.isNotEmpty()) {
-                        val cleanPath = targetUrl.replace("'", "\\'")
-                        webView?.evaluateJavascript("loadModelFromAndroid('$cleanPath')", null)
+                        val quotedPath = JSONObject.quote(targetUrl)
+                        webView?.evaluateJavascript("loadModelFromAndroid($quotedPath)", null)
                     }
                 }
                 key in listOf(WaifuPreferences.KEY_SCALE, WaifuPreferences.KEY_OFFSET_X, WaifuPreferences.KEY_OFFSET_Y) -> {

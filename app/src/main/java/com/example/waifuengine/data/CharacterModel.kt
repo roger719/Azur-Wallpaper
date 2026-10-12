@@ -255,6 +255,12 @@ object CharacterRepository {
                     }
 
                     val destFile = File(targetDir, relativePath)
+                    
+                    // SÉCURITÉ ZIP SLIP : Vérification stricte du chemin canonique
+                    if (!destFile.canonicalPath.startsWith(targetDir.canonicalPath)) {
+                        throw SecurityException("Entrée ZIP invalide hors du répertoire cible : $entryPath")
+                    }
+
                     destFile.parentFile?.mkdirs()
 
                     destFile.outputStream().use { output ->
