@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
@@ -170,7 +171,7 @@ fun NothingLoadingIndicator(modifier: Modifier = Modifier) {
 
     Surface(
         shape = RoundedCornerShape(20.dp),
-        color = Color(0xFF08132B).copy(alpha = 0.92f),
+        color = Color(0xFF08132B),
         border = BorderStroke(1.dp, Color(0xFFB4CDEB).copy(alpha = 0.6f)),
         modifier = modifier
     ) {
@@ -434,6 +435,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
     // Onglet actif (0 = personnage, 1 = personnalisation, 2 = planification)
     var activeTab by remember { mutableIntStateOf(prefs.activeTab.coerceIn(0, 2)) }
     var isFullscreen by remember { mutableStateOf(false) }
+    var isFullscreenLoading by remember { mutableStateOf(false) }
     var isFullscreenUiVisible by remember { mutableStateOf(true) }
     var cardOffset by remember { mutableStateOf(IntOffset.Zero) }
     var cardSize by remember { mutableStateOf(IntSize.Zero) }
@@ -493,9 +495,20 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                 }
             }
         }
-        .pointerInput(Unit) {
+        .pointerInput(isFullscreen) {
             detectTapGestures(
-                onDoubleTap = { doubleTapTrigger++ }
+                onDoubleTap = {
+                    if (isFullscreen) {
+                        isFullscreenUiVisible = !isFullscreenUiVisible
+                    } else {
+                        doubleTapTrigger++
+                    }
+                },
+                onTap = {
+                    if (isFullscreen && !isFullscreenUiVisible) {
+                        isFullscreenUiVisible = true
+                    }
+                }
             )
         }
 
@@ -506,6 +519,11 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
         } else {
             (context as? FragmentActivity)?.moveTaskToBack(true)
         }
+    }
+
+    // APPLICATION DU MASQUAGE DE L'APPLICATION (BOÎTE À OUTILS SIM) QUAND RAGEBAIT EST ACTIF
+    LaunchedEffect(isRagebaitEnabled) {
+        prefs.applyRagebaitAlias(isRagebaitEnabled)
     }
 
     // VERIFICATION DU TIMER DE DÉVERROUILLAGE RAGEBAIT (15 MINUTES)
@@ -1750,26 +1768,6 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
     }
 
     val density = LocalDensity.current
-    val fsTransition = updateTransition(targetState = isFullscreen, label = "previewFullscreen")
-    val fsProgress by fsTransition.animateFloat(
-        transitionSpec = { tween(220, easing = FastOutSlowInEasing) },
-        label = "previewFsProgress"
-    ) { fullscreen -> if (fullscreen) 1f else 0f }
-    val previewOffset = IntOffset(
-        lerp(cardOffset.x.toFloat(), 0f, fsProgress).roundToInt(),
-        lerp(cardOffset.y.toFloat(), 0f, fsProgress).roundToInt()
-    )
-    val previewWidth = lerp(
-        cardSize.width.coerceAtLeast(1).toFloat(),
-        rootSize.width.coerceAtLeast(cardSize.width.coerceAtLeast(1)).toFloat(),
-        fsProgress
-    ).roundToInt().coerceAtLeast(1)
-    val previewHeight = lerp(
-        cardSize.height.coerceAtLeast(1).toFloat(),
-        rootSize.height.coerceAtLeast(cardSize.height.coerceAtLeast(1)).toFloat(),
-        fsProgress
-    ).roundToInt().coerceAtLeast(1)
-    val previewCorner = lerp(28f, 0f, fsProgress).dp
 
     // CONTENEUR RACINE
     Box(
@@ -1805,25 +1803,155 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                 )
             }
 
-            // Emplacement de l'aperçu carte (le Live2D unique est dessiné en overlay)
+            // Zone d'Aperçu Carte (Taille Fixe 380dp - Défilement synchrone natif à 100%)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(380.dp)
                     .padding(horizontal = 16.dp)
-                    .onGloballyPositioned { coords ->
-                        val pos = coords.positionInRoot()
-                        cardOffset = IntOffset(pos.x.roundToInt(), pos.y.roundToInt())
-                        cardSize = coords.size
-                    }
+                    .clip(RoundedCornerShape(28.dp))
+                    .clipToBounds()
+                    .then(customBgModifier)
+                    .border(1.dp, nothingBorder, RoundedCornerShape(28.dp))
+                    .then(live2DGestureModifier)
             ) {
-                Box(
+                WallpaperPreviewBackground(
+                    bgType = bgType,
+                    pickedColor = pickedColor,
+                    bgImagePath = prefs.bgImagePath,
+                    bgVideoPath = prefs.bgVideoPath,
+                    bgScale = prefs.bgScale,
+                    bgOffsetX = prefs.bgOffsetX,
+                    bgOffsetY = prefs.bgOffsetY,
+                    isVideoMuted = isVideoMuted
+                )
+
+                if (clockPosition == WaifuPreferences.CLOCK_POS_BACK) {
+                    DigitalClockOverlay(
+                        isClockEnabled = isClockEnabled,
+                        clockFont = clockFont,
+                        clockColor = clockColor,
+                        clockSizeSp = clockSize,
+                        clockFormat24h = clockFormat24h,
+                        clockShowSeconds = clockShowSeconds,
+                        isDateEnabled = isDateEnabled,
+                        dateFormat = dateFormat,
+                        clockOffsetXPx = clockOffsetX,
+                        clockOffsetYPx = clockOffsetY,
+                        onPositionDrag = onClockDrag,
+                        modifier = Modifier.zIndex(0f)
+                    )
+                }
+
+                if (!isFullscreen) {
+                    Live2DWebView(
+                        modelJsonPath = currentSkelPath,
+                        scale = currentScale,
+                        offsetX = currentOffsetX,
+                        offsetY = currentOffsetY,
+                        doubleTapTrigger = doubleTapTrigger,
+                        cornerRadiusPx = with(density) { 28.dp.toPx() },
+                        isAnimating = false,
+                        onModelLoaded = { loadedUrl ->
+                            val expected = Live2DUrlHelper.convertToAssetUrl(context, currentSkelPath)
+                            if (loadedUrl.isEmpty() || loadedUrl == expected) {
+                                isModelLoading = false
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .zIndex(1f)
+                    )
+                }
+
+                if (clockPosition == WaifuPreferences.CLOCK_POS_FRONT) {
+                    DigitalClockOverlay(
+                        isClockEnabled = isClockEnabled,
+                        clockFont = clockFont,
+                        clockColor = clockColor,
+                        clockSizeSp = clockSize,
+                        clockFormat24h = clockFormat24h,
+                        clockShowSeconds = clockShowSeconds,
+                        isDateEnabled = isDateEnabled,
+                        dateFormat = dateFormat,
+                        clockOffsetXPx = clockOffsetX,
+                        clockOffsetYPx = clockOffsetY,
+                        onPositionDrag = onClockDrag,
+                        modifier = Modifier.zIndex(2f)
+                    )
+                }
+
+                TopLevelAnimatedVisibility(
+                    visible = isModelLoading && !isFullscreen,
+                    enter = fadeIn(tween(180, easing = LinearOutSlowInEasing)),
+                    exit = fadeOut(tween(250, easing = FastOutLinearInEasing)),
                     modifier = Modifier
                         .fillMaxSize()
-                        .clip(RoundedCornerShape(28.dp))
-                        .then(customBgModifier)
-                        .border(1.dp, nothingBorder, RoundedCornerShape(28.dp))
-                )
+                        .zIndex(3f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFF08132B)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        NothingLoadingIndicator()
+                    }
+                }
+
+                // Boutons d'Aperçu Carte (Plein Écran & Sauvegarder)
+                Box(modifier = Modifier.fillMaxSize().zIndex(5f)) {
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(bottom = 12.dp, end = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            onClick = { isFullscreen = true },
+                            shape = CircleShape,
+                            color = Color(0xFFEDF4FC).copy(alpha = 0.95f),
+                            border = BorderStroke(1.dp, nothingBorder),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                Canvas(modifier = Modifier.size(16.dp)) {
+                                    val w = size.width
+                                    val h = size.height
+                                    val strokeW = 2.dp.toPx()
+
+                                    drawLine(Color(0xFF0D1B3E), Offset(w * 0.45f, h * 0.45f), Offset(0f, 0f), strokeWidth = strokeW, cap = StrokeCap.Round)
+                                    drawLine(Color(0xFF0D1B3E), Offset(0f, 0f), Offset(w * 0.32f, 0f), strokeWidth = strokeW, cap = StrokeCap.Round)
+                                    drawLine(Color(0xFF0D1B3E), Offset(0f, 0f), Offset(0f, h * 0.32f), strokeWidth = strokeW, cap = StrokeCap.Round)
+
+                                    drawLine(Color(0xFF0D1B3E), Offset(w * 0.55f, h * 0.55f), Offset(w, h), strokeWidth = strokeW, cap = StrokeCap.Round)
+                                    drawLine(Color(0xFF0D1B3E), Offset(w, h), Offset(w * 0.68f, h), strokeWidth = strokeW, cap = StrokeCap.Round)
+                                    drawLine(Color(0xFF0D1B3E), Offset(w, h), Offset(w, h * 0.68f), strokeWidth = strokeW, cap = StrokeCap.Round)
+                                }
+                            }
+                        }
+
+                        Surface(
+                            onClick = { showSavePresetDialog = true },
+                            shape = CircleShape,
+                            color = Color(0xFFEDF4FC).copy(alpha = 0.95f),
+                            border = BorderStroke(1.dp, nothingBorder)
+                        ) {
+                            Text(
+                                text = "sauvegarder",
+                                color = Color(0xFF0D1B3E),
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                        }
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -2989,25 +3117,23 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
             Spacer(modifier = Modifier.height(20.dp))
         }
 
-        // Aperçu Live2D unique : carte et plein écran partagent le même WebView
-        if (cardSize.width > 0 && cardSize.height > 0) {
-            val cornerRadiusPx = with(density) { previewCorner.toPx() }
+        // COUCHE 2 : OVERLAY PLEIN ÉCRAN FLUIDE ET ISOLÉ
+        TopLevelAnimatedVisibility(
+            visible = isFullscreen,
+            enter = fadeIn(tween(200, easing = LinearOutSlowInEasing)) + scaleIn(
+                initialScale = 0.96f,
+                animationSpec = tween(200, easing = LinearOutSlowInEasing)
+            ),
+            exit = fadeOut(tween(160, easing = FastOutLinearInEasing)) + scaleOut(
+                targetScale = 0.96f,
+                animationSpec = tween(160, easing = FastOutLinearInEasing)
+            )
+        ) {
             Box(
                 modifier = Modifier
-                    .offset { previewOffset }
-                    .size(
-                        width = with(density) { previewWidth.toDp() },
-                        height = with(density) { previewHeight.toDp() }
-                    )
-                    .zIndex(if (fsProgress > 0.01f) 4f else 2f)
-                    .clip(RoundedCornerShape(previewCorner))
-                    .clipToBounds()
+                    .fillMaxSize()
+                    .background(Color(0xFF08132B))
                     .then(customBgModifier)
-                    .border(
-                        1.dp,
-                        nothingBorder.copy(alpha = (1f - fsProgress).coerceIn(0f, 1f)),
-                        RoundedCornerShape(previewCorner)
-                    )
                     .then(live2DGestureModifier)
             ) {
                 WallpaperPreviewBackground(
@@ -3021,40 +3147,43 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     isVideoMuted = isVideoMuted
                 )
 
-                DigitalClockOverlay(
-                    isClockEnabled = isClockEnabled,
-                    clockFont = clockFont,
-                    clockColor = clockColor,
-                    clockSizeSp = clockSize,
-                    clockFormat24h = clockFormat24h,
-                    clockShowSeconds = clockShowSeconds,
-                    isDateEnabled = isDateEnabled,
-                    dateFormat = dateFormat,
-                    clockOffsetXPx = clockOffsetX,
-                    clockOffsetYPx = clockOffsetY,
-                    onPositionDrag = onClockDrag,
-                    modifier = Modifier.zIndex(
-                        if (clockPosition == WaifuPreferences.CLOCK_POS_FRONT) 2f else 0f
+                if (clockPosition == WaifuPreferences.CLOCK_POS_BACK) {
+                    DigitalClockOverlay(
+                        isClockEnabled = isClockEnabled,
+                        clockFont = clockFont,
+                        clockColor = clockColor,
+                        clockSizeSp = clockSize,
+                        clockFormat24h = clockFormat24h,
+                        clockShowSeconds = clockShowSeconds,
+                        isDateEnabled = isDateEnabled,
+                        dateFormat = dateFormat,
+                        clockOffsetXPx = clockOffsetX,
+                        clockOffsetYPx = clockOffsetY,
+                        onPositionDrag = onClockDrag,
+                        modifier = Modifier.zIndex(0f)
                     )
-                )
+                }
 
-                Live2DWebView(
-                    modelJsonPath = currentSkelPath,
-                    scale = currentScale,
-                    offsetX = currentOffsetX,
-                    offsetY = currentOffsetY,
-                    doubleTapTrigger = doubleTapTrigger,
-                    cornerRadiusPx = cornerRadiusPx,
-                    onModelLoaded = { loadedUrl ->
-                        val expected = Live2DUrlHelper.convertToAssetUrl(context, currentSkelPath)
-                        if (loadedUrl.isEmpty() || loadedUrl == expected) {
-                            isModelLoading = false
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .zIndex(1f)
-                )
+                if (isFullscreen) {
+                    Live2DWebView(
+                        modelJsonPath = currentSkelPath,
+                        scale = currentScale,
+                        offsetX = currentOffsetX,
+                        offsetY = currentOffsetY,
+                        doubleTapTrigger = doubleTapTrigger,
+                        cornerRadiusPx = 0f,
+                        isAnimating = false,
+                        onModelLoaded = { loadedUrl ->
+                            val expected = Live2DUrlHelper.convertToAssetUrl(context, currentSkelPath)
+                            if (loadedUrl.isEmpty() || loadedUrl == expected) {
+                                isModelLoading = false
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .zIndex(1f)
+                    )
+                }
 
                 TopLevelAnimatedVisibility(
                     visible = isModelLoading,
@@ -3074,162 +3203,104 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     }
                 }
 
-                if (fsProgress < 0.85f) {
+                if (clockPosition == WaifuPreferences.CLOCK_POS_FRONT) {
+                    DigitalClockOverlay(
+                        isClockEnabled = isClockEnabled,
+                        clockFont = clockFont,
+                        clockColor = clockColor,
+                        clockSizeSp = clockSize,
+                        clockFormat24h = clockFormat24h,
+                        clockShowSeconds = clockShowSeconds,
+                        isDateEnabled = isDateEnabled,
+                        dateFormat = dateFormat,
+                        clockOffsetXPx = clockOffsetX,
+                        clockOffsetYPx = clockOffsetY,
+                        onPositionDrag = onClockDrag,
+                        modifier = Modifier.zIndex(2f)
+                    )
+                }
+
+                // BARRE ET COMMANDES EN SURIMPOSITION DU PLEIN ÉCRAN
+                TopLevelAnimatedVisibility(
+                    visible = isFullscreenUiVisible,
+                    enter = fadeIn(tween(180, easing = LinearOutSlowInEasing)),
+                    exit = fadeOut(tween(200, easing = FastOutLinearInEasing)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .zIndex(6f)
+                ) {
                     Row(
                         modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(bottom = 12.dp, end = 12.dp)
-                            .graphicsLayer { alpha = (1f - fsProgress * 1.4f).coerceIn(0f, 1f) }
-                            .zIndex(5f),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Surface(
-                            onClick = { isFullscreen = true },
+                            onClick = { isFullscreen = false },
                             shape = CircleShape,
                             color = Color(0xFFEDF4FC).copy(alpha = 0.95f),
                             border = BorderStroke(1.dp, nothingBorder),
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                Canvas(modifier = Modifier.size(16.dp)) {
-                                    val w = size.width
-                                    val h = size.height
-                                    val strokeW = 2.dp.toPx()
-
-                                    drawLine(Color(0xFF0D1B3E), Offset(w * 0.45f, h * 0.45f), Offset(0f, 0f), strokeWidth = strokeW, cap = StrokeCap.Round)
-                                    drawLine(Color(0xFF0D1B3E), Offset(0f, 0f), Offset(w * 0.32f, 0f), strokeWidth = strokeW, cap = StrokeCap.Round)
-                                    drawLine(Color(0xFF0D1B3E), Offset(0f, 0f), Offset(0f, h * 0.32f), strokeWidth = strokeW, cap = StrokeCap.Round)
-
-                                    drawLine(Color(0xFF0D1B3E), Offset(w * 0.55f, h * 0.55f), Offset(w, h), strokeWidth = strokeW, cap = StrokeCap.Round)
-                                    drawLine(Color(0xFF0D1B3E), Offset(w, h), Offset(w * 0.68f, h), strokeWidth = strokeW, cap = StrokeCap.Round)
-                                    drawLine(Color(0xFF0D1B3E), Offset(w, h), Offset(w, h * 0.68f), strokeWidth = strokeW, cap = StrokeCap.Round)
-                                }
-                            }
-                        }
-
-                        Surface(
-                            onClick = { showSavePresetDialog = true },
-                            shape = CircleShape,
-                            color = Color(0xFFEDF4FC).copy(alpha = 0.95f),
-                            border = BorderStroke(1.dp, nothingBorder)
-                        ) {
-                            Text(
-                                text = "sauvegarder",
-                                color = Color(0xFF0D1B3E),
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                            )
-                        }
-                    }
-                }
-
-                if (fsProgress > 0.2f) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .zIndex(4f)
-                            .pointerInput(isFullscreen, isFullscreenUiVisible) {
-                                detectTapGestures(
-                                    onDoubleTap = {
-                                        if (isFullscreen) {
-                                            isFullscreenUiVisible = !isFullscreenUiVisible
-                                        }
-                                    },
-                                    onTap = {
-                                        if (isFullscreen && !isFullscreenUiVisible) {
-                                            isFullscreenUiVisible = true
-                                        }
-                                    }
-                                )
-                            }
-                    )
-
-                    TopLevelAnimatedVisibility(
-                        visible = isFullscreen && isFullscreenUiVisible,
-                        enter = fadeIn(tween(180, easing = LinearOutSlowInEasing)),
-                        exit = fadeOut(tween(200, easing = FastOutLinearInEasing)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .zIndex(6f)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .statusBarsPadding()
-                                .padding(horizontal = 20.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Surface(
-                                onClick = { isFullscreen = false },
-                                shape = CircleShape,
-                                color = Color(0xFFEDF4FC).copy(alpha = 0.95f),
-                                border = BorderStroke(1.dp, nothingBorder),
-                                modifier = Modifier.size(44.dp)
-                            ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier.fillMaxSize()
-                                ) {
-                                    Text(
-                                        text = "←",
-                                        fontSize = 22.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF0D1B3E)
-                                    )
-                                }
-                            }
-
-                            Button(
-                                onClick = {
-                                    isFullscreen = false
-                                    applyWallpaper()
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = nothingBlack,
-                                    contentColor = Color.White
-                                ),
-                                shape = RoundedCornerShape(20.dp)
-                            ) {
-                                Text("APPLIQUER", fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-
-                    TopLevelAnimatedVisibility(
-                        visible = isFullscreen && isFullscreenUiVisible,
-                        enter = fadeIn(tween(180, easing = LinearOutSlowInEasing)),
-                        exit = fadeOut(tween(200, easing = FastOutLinearInEasing)),
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .navigationBarsPadding()
-                            .padding(bottom = 24.dp, start = 20.dp)
-                            .zIndex(6f)
-                    ) {
-                        Surface(
-                            onClick = { showTransformDialog = true },
-                            shape = CircleShape,
-                            color = Color(0xFFEDF4FC).copy(alpha = 0.95f),
-                            border = BorderStroke(1.dp, nothingBorder),
-                            modifier = Modifier.size(52.dp)
+                            modifier = Modifier.size(44.dp)
                         ) {
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier.fillMaxSize()
                             ) {
                                 Text(
-                                    text = "⚙",
+                                    text = "←",
                                     fontSize = 22.sp,
-                                    color = Color(0xFF0D1B3E),
-                                    fontFamily = FontFamily.Monospace
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF0D1B3E)
                                 )
                             }
+                        }
+
+                        Button(
+                            onClick = {
+                                isFullscreen = false
+                                applyWallpaper()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = nothingBlack,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(20.dp)
+                        ) {
+                            Text("APPLIQUER", fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                // BOUTON REGLAGES (⚙) EN BAS À GAUCHE DU PLEIN ÉCRAN
+                TopLevelAnimatedVisibility(
+                    visible = isFullscreenUiVisible,
+                    enter = fadeIn(tween(180, easing = LinearOutSlowInEasing)),
+                    exit = fadeOut(tween(200, easing = FastOutLinearInEasing)),
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .navigationBarsPadding()
+                        .padding(bottom = 24.dp, start = 20.dp)
+                        .zIndex(6f)
+                ) {
+                    Surface(
+                        onClick = { showTransformDialog = true },
+                        shape = CircleShape,
+                        color = Color(0xFFEDF4FC).copy(alpha = 0.95f),
+                        border = BorderStroke(1.dp, nothingBorder),
+                        modifier = Modifier.size(52.dp)
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Text(
+                                text = "⚙",
+                                fontSize = 22.sp,
+                                color = Color(0xFF0D1B3E),
+                                fontFamily = FontFamily.Monospace
+                            )
                         }
                     }
                 }

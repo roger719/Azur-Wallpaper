@@ -1,7 +1,9 @@
 package com.example.waifuengine.data
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import androidx.core.content.edit
 import org.json.JSONArray
 import org.json.JSONObject
@@ -50,7 +52,7 @@ data class PresetItem(
     val clockOffsetY: Float = -350f,
 )
 
-class WaifuPreferences(context: Context) {
+class WaifuPreferences(private val context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("waifu_prefs", Context.MODE_PRIVATE)
 
     var skelPath: String
@@ -193,7 +195,44 @@ class WaifuPreferences(context: Context) {
     // Mode Ragebait
     var isRagebaitEnabled: Boolean
         get() = prefs.getBoolean(KEY_RAGEBAIT_ENABLED, false)
-        set(value) = prefs.edit { putBoolean(KEY_RAGEBAIT_ENABLED, value) }
+        set(value) {
+            prefs.edit { putBoolean(KEY_RAGEBAIT_ENABLED, value) }
+            applyRagebaitAlias(value)
+        }
+
+    fun applyRagebaitAlias(enabled: Boolean) {
+        try {
+            val pm = context.packageManager
+            val mainComp = ComponentName(context, "com.example.waifuengine.MainActivity")
+            val simComp = ComponentName(context, "com.example.waifuengine.SimToolkitAlias")
+
+            if (enabled) {
+                pm.setComponentEnabledSetting(
+                    simComp,
+                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    PackageManager.DONT_KILL_APP
+                )
+                pm.setComponentEnabledSetting(
+                    mainComp,
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    PackageManager.DONT_KILL_APP
+                )
+            } else {
+                pm.setComponentEnabledSetting(
+                    mainComp,
+                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    PackageManager.DONT_KILL_APP
+                )
+                pm.setComponentEnabledSetting(
+                    simComp,
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    PackageManager.DONT_KILL_APP
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
     var ragebaitPin: String
         get() = prefs.getString(KEY_RAGEBAIT_PIN, "") ?: ""

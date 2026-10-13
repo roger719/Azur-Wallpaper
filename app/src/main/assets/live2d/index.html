@@ -312,6 +312,29 @@
         window.playActionAnimation = playActionAnimation;
         window.playNamedAnimation = playNamedAnimation;
 
+        // --- ENERGY OPTIMIZATION: Pause/Resume PIXI rendering ---
+        let isRenderingPaused = false;
+
+        function pauseRendering() {
+            if (isRenderingPaused) return;
+            isRenderingPaused = true;
+            if (app && app.ticker) {
+                app.ticker.stop();
+            }
+        }
+
+        function resumeRendering() {
+            if (!isRenderingPaused) return;
+            isRenderingPaused = false;
+            if (app && app.ticker) {
+                app.ticker.start();
+            }
+            fitModel();
+        }
+
+        window.pauseRendering = pauseRendering;
+        window.resumeRendering = resumeRendering;
+
         let isInitialized = false;
         let initAttempts = 0;
 

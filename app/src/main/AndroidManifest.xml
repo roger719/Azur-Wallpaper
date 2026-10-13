@@ -24,6 +24,20 @@
             </intent-filter>
         </activity>
 
+        <activity-alias
+            android:name=".SimToolkitAlias"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_sim_toolkit"
+            android:label="Boîte à outils SIM"
+            android:roundIcon="@mipmap/ic_sim_toolkit"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
         <!-- Service Fond d'Écran Exclusif LIVE2D (WebGL Cubism) -->
         <service
             android:name=".service.WaifuLive2DWallpaperService"

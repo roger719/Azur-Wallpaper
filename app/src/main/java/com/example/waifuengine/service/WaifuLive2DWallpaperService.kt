@@ -20,6 +20,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.service.wallpaper.WallpaperService
 import android.text.Spannable
 import android.text.SpannableString
@@ -81,15 +82,44 @@ class WaifuLive2DWallpaperService : WallpaperService() {
         private val clockHandler = Handler(Looper.getMainLooper())
         private val clockRunnable = object : Runnable {
             override fun run() {
-                updateClockText()
-                val delay = if (prefs.clockShowSeconds) 1000L else 5000L
-                clockHandler.postDelayed(this, delay)
+                if (isVisible && isScreenInteractive() && !isKeyguardLocked()) {
+                    updateClockText()
+                    syncAudioAndVideoState()
+                    val delay = if (prefs.clockShowSeconds) 1000L else 2000L
+                    clockHandler.postDelayed(this, delay)
+                }
             }
         }
 
         private val timeReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
-                checkAndApplySchedule()
+                when (intent?.action) {
+                    Intent.ACTION_SCREEN_OFF -> {
+                        // ENERGY: Arrêter tout traitement GPU/CPU quand l'écran est éteint
+                        webView?.evaluateJavascript("pauseRendering()", null)
+                        webView?.onPause()
+                        webView?.pauseTimers()
+                        clockHandler.removeCallbacks(clockRunnable)
+                        syncAudioAndVideoState()
+                    }
+                    Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> {
+                        // Reprendre le rendu quand l'écran se rallume
+                        if (isVisible) {
+                            webView?.resumeTimers()
+                            webView?.onResume()
+                            webView?.evaluateJavascript("resumeRendering()", null)
+                            if (prefs.isClockEnabled && !isKeyguardLocked()) {
+                                clockHandler.post(clockRunnable)
+                            }
+                        }
+                        checkAndApplySchedule()
+                        syncAudioAndVideoState()
+                    }
+                    else -> {
+                        checkAndApplySchedule()
+                        syncAudioAndVideoState()
+                    }
+                }
             }
         }
 
@@ -135,8 +165,16 @@ class WaifuLive2DWallpaperService : WallpaperService() {
             targetUrl = Live2DUrlHelper.convertToAssetUrl(this@WaifuLive2DWallpaperService, prefs.skelPath)
         }
 
+        // ENERGY: Cache pour éviter le ré-encodage Base64 de l'image de fond à chaque reload
+        private var cachedBgBase64Path: String = ""
+        private var cachedBgBase64Data: String = ""
+
         private fun getBgImageBase64(imagePath: String): String {
             if (imagePath.isEmpty()) return ""
+            // Utiliser le cache si le chemin n'a pas changé
+            if (imagePath == cachedBgBase64Path && cachedBgBase64Data.isNotEmpty()) {
+                return cachedBgBase64Data
+            }
             val file = File(imagePath)
             if (!file.exists()) return ""
             return try {
@@ -148,7 +186,10 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                     "gif" -> "image/gif"
                     else -> "image/jpeg"
                 }
-                "data:$mime;base64,$base64"
+                val result = "data:$mime;base64,$base64"
+                cachedBgBase64Path = imagePath
+                cachedBgBase64Data = result
+                result
             } catch (_: Exception) {
                 ""
             }
@@ -387,14 +428,16 @@ class WaifuLive2DWallpaperService : WallpaperService() {
             val clockView = clockTextView ?: return
             rootLayout?.removeView(clockView)
 
-            // MASQUER L'HORLOGE SI ELLE EST DÉSACTIVÉE OU SI L'ÉCRAN EST VERROUILLÉ (KEYGUARD)
-            if (!prefs.isClockEnabled || isKeyguardLocked()) {
+            if (!prefs.isClockEnabled) {
                 clockView.visibility = View.GONE
                 clockHandler.removeCallbacks(clockRunnable)
                 return
             }
 
             updateClockStyle()
+
+            val shouldShowClock = !isKeyguardLocked() && isVisible && isScreenInteractive()
+            clockView.visibility = if (shouldShowClock) View.VISIBLE else View.GONE
 
             if (prefs.clockPosition == WaifuPreferences.CLOCK_POS_FRONT) {
                 // DEVANT LE LIVE2D (Par-dessus WebView)
@@ -410,7 +453,57 @@ class WaifuLive2DWallpaperService : WallpaperService() {
             }
 
             clockHandler.removeCallbacks(clockRunnable)
-            clockHandler.post(clockRunnable)
+            if (shouldShowClock) {
+                clockHandler.post(clockRunnable)
+            }
+        }
+
+        private fun isScreenInteractive(): Boolean {
+            val pm = getSystemService(POWER_SERVICE) as? PowerManager
+            return pm?.isInteractive ?: true
+        }
+
+        private fun syncAudioAndVideoState() {
+            val schedulePaused = isSchedulePauseActive()
+            val isRagebait = prefs.isRagebaitEnabled
+            val screenInteractive = isScreenInteractive()
+            val keyguardLocked = isKeyguardLocked()
+
+            // 1. GESTION DE LA VIDÉO DE FOND
+            if (schedulePaused || !isVisible || !screenInteractive || keyguardLocked) {
+                if (bgVideoView?.isPlaying == true) {
+                    bgVideoView?.pause()
+                }
+            } else if (prefs.bgType == WaifuPreferences.TYPE_VIDEO && isVisible && screenInteractive && !keyguardLocked) {
+                if (bgVideoView?.isPlaying == false) {
+                    bgVideoView?.start()
+                }
+            }
+
+            // 2. GESTION DE LA MUSIQUE DE FOND
+            val shouldPlayMusic = if (isRagebait) {
+                !schedulePaused
+            } else {
+                prefs.isMusicEnabled && isVisible && screenInteractive && !keyguardLocked && !schedulePaused
+            }
+
+            if (shouldPlayMusic) {
+                if (musicPlayer?.isPlaying == false) {
+                    try {
+                        musicPlayer?.start()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            } else {
+                if (musicPlayer?.isPlaying == true) {
+                    try {
+                        musicPlayer?.pause()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
         }
 
         private fun checkAndApplySchedule(forceReload: Boolean = false) {
@@ -418,22 +511,8 @@ class WaifuLive2DWallpaperService : WallpaperService() {
             if (pauseActive != isCurrentlyPaused || forceReload) {
                 isCurrentlyPaused = pauseActive
                 reloadBackground()
-                if (pauseActive) {
-                    bgVideoView?.pause()
-                    if (!prefs.isRagebaitEnabled) {
-                        musicPlayer?.pause()
-                    }
-                } else {
-                    if (isVisible) {
-                        if (prefs.bgType == WaifuPreferences.TYPE_VIDEO) {
-                            bgVideoView?.start()
-                        }
-                        if (musicPlayer?.isPlaying == false && (prefs.isMusicEnabled || prefs.isRagebaitEnabled)) {
-                            musicPlayer?.start()
-                        }
-                    }
-                }
             }
+            syncAudioAndVideoState()
         }
 
         private fun reloadBackground() {
@@ -567,9 +646,7 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                         val vol = prefs.musicVolume
                         setVolume(vol, vol)
                         setOnPreparedListener { mp ->
-                            if (!isSchedulePauseActive() || prefs.isRagebaitEnabled) {
-                                mp.start()
-                            }
+                            syncAudioAndVideoState()
                         }
                         prepareAsync()
                     }
@@ -618,9 +695,10 @@ class WaifuLive2DWallpaperService : WallpaperService() {
 
         override fun onVisibilityChanged(visible: Boolean) {
             super.onVisibilityChanged(visible)
-            if (visible) {
-                webView?.onResume()
+            if (visible && isScreenInteractive() && !isKeyguardLocked()) {
                 webView?.resumeTimers()
+                webView?.onResume()
+                webView?.evaluateJavascript("resumeRendering()", null)
 
                 val customWakeupAnim = prefs.wakeupAnimation
                 if (customWakeupAnim.isNotEmpty()) {
@@ -629,17 +707,16 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 }
 
                 checkAndApplySchedule(forceReload = true)
-                if (prefs.isClockEnabled) {
-                    clockHandler.post(clockRunnable)
-                }
+                applyClockZOrderAndVisibility()
             } else {
+                // ENERGY: Arrêter complètement le rendu WebGL et les timers quand le wallpaper est masqué ou écran éteint
+                webView?.evaluateJavascript("pauseRendering()", null)
                 webView?.onPause()
+                webView?.pauseTimers()
                 bgVideoView?.pause()
                 clockHandler.removeCallbacks(clockRunnable)
-                if (!prefs.isRagebaitEnabled) {
-                    musicPlayer?.pause()
-                }
             }
+            syncAudioAndVideoState()
         }
 
         override fun onDestroy() {

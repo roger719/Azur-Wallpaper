@@ -71,6 +71,7 @@ fun Live2DWebView(
     offsetY: Float = 0f,
     doubleTapTrigger: Int = 0,
     cornerRadiusPx: Float = 0f,
+    isAnimating: Boolean = false,
     onModelLoaded: ((loadedUrl: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -107,6 +108,12 @@ fun Live2DWebView(
         view ?: return
         view.evaluateJavascript("setCustomScale($scale)", null)
         view.evaluateJavascript("setCustomOffset($offsetX, $offsetY)", null)
+    }
+
+    LaunchedEffect(isAnimating) {
+        if (!isAnimating && isEngineReady && webViewRef != null) {
+            webViewRef?.evaluateJavascript("resizeToContainer()", null)
+        }
     }
 
     LaunchedEffect(targetUrl, isEngineReady, webViewRef) {
@@ -207,7 +214,7 @@ fun Live2DWebView(
             view.invalidateOutline()
         },
         modifier = modifier.onSizeChanged { size ->
-            if (size.width > 0 && size.height > 0 && isEngineReady) {
+            if (!isAnimating && size.width > 0 && size.height > 0 && isEngineReady) {
                 webViewRef?.evaluateJavascript("resizeToContainer()", null)
             }
         }
