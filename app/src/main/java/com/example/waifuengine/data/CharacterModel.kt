@@ -54,37 +54,54 @@ object CharacterRepository {
     }
 
     fun getAvailableMotionsForCharacter(characterFolderFile: File): List<String> {
-        if (!characterFolderFile.isDirectory) return listOf("Idle", "Action", "Touch")
+        if (!characterFolderFile.exists()) return emptyList()
 
         val motionSet = mutableSetOf<String>()
 
-        // 1. Scanner tous les fichiers *.motion3.json
+        // 1. Scanner tous les fichiers *.motion3.json ET *.motion3
         characterFolderFile.walkTopDown().forEach { file ->
-            if (file.isFile && file.name.endsWith(".motion3.json", ignoreCase = true)) {
-                val animName = file.name.removeSuffix(".motion3.json").removeSuffix(".anim")
-                if (animName.isNotBlank()) {
-                    motionSet.add(animName)
+            if (file.isFile) {
+                val nameLower = file.name.lowercase()
+                if (nameLower.endsWith(".motion3.json") || nameLower.endsWith(".motion3")) {
+                    val animName = file.name
+                        .replace(Regex("(?i)(\\.anim)?\\.motion3(\\.json)?$"), "")
+                    if (animName.isNotBlank()) {
+                        motionSet.add(animName)
+                    }
                 }
             }
         }
 
-        // 2. Parser le fichier .model3.json si présent pour extraire les groupes de motions
+        // 2. Parser le fichier .model3.json si présent pour extraire les groupes et fichiers de motions
         val modelJsonFile = characterFolderFile.walkTopDown().firstOrNull { it.isFile && it.name.endsWith(".model3.json", ignoreCase = true) }
         if (modelJsonFile != null && modelJsonFile.exists()) {
             try {
                 val text = modelJsonFile.readText()
-                val motionGroupRegex = Regex("\"([a-zA-Z0-9_]+)\"\\s*:\\s*\\[\\s*\\{")
-                motionGroupRegex.findAll(text).forEach { match ->
-                    val groupName = match.groupValues[1]
-                    if (groupName.isNotBlank() && groupName != "FileReferences" && groupName != "Motions") {
-                        motionSet.add(groupName)
+                val root = JSONObject(text)
+                val fileRefs = root.optJSONObject("FileReferences")
+                val motionsObj = fileRefs?.optJSONObject("Motions")
+                if (motionsObj != null) {
+                    val keys = motionsObj.keys()
+                    while (keys.hasNext()) {
+                        val groupName = keys.next()
+                        if (groupName.isNotBlank()) {
+                            motionSet.add(groupName)
+                        }
+                        val arr = motionsObj.optJSONArray(groupName)
+                        if (arr != null) {
+                            for (i in 0 until arr.length()) {
+                                val item = arr.optJSONObject(i)
+                                val f = item?.optString("File") ?: item?.optString("file") ?: ""
+                                val filename = f.substringAfterLast('/')
+                                    .replace(Regex("(?i)(\\.anim)?\\.motion3(\\.json)?$"), "")
+                                if (filename.isNotBlank()) {
+                                    motionSet.add(filename)
+                                }
+                            }
+                        }
                     }
                 }
             } catch (_: Exception) {}
-        }
-
-        if (motionSet.isEmpty()) {
-            motionSet.addAll(listOf("Idle", "Action", "Touch", "Wakeup", "Tap", "Special"))
         }
 
         return motionSet.toList().sorted()

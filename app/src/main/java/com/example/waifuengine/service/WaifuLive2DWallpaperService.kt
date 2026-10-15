@@ -205,18 +205,16 @@ class WaifuLive2DWallpaperService : WallpaperService() {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
                     val now = System.currentTimeMillis()
-                    if (now - lastTouchTime >= 16) {
+                    if (now - lastTouchTime >= 16 && prefs.isPointerTrackingEnabled) {
                         lastTouchTime = now
                         webView?.evaluateJavascript("setPointerPosition($x, $y)", null)
                     }
                 }
                 MotionEvent.ACTION_UP -> {
                     val customClickAnim = prefs.clickAnimation
-                    if (customClickAnim.isNotEmpty()) {
-                        val quotedAnim = JSONObject.quote(customClickAnim)
-                        webView?.evaluateJavascript("playNamedAnimation($quotedAnim)", null)
-                    } else {
-                        webView?.evaluateJavascript("playActionAnimation()", null)
+                    if (customClickAnim.isNotBlank() && !customClickAnim.equals("NONE", ignoreCase = true)) {
+                        val cleanList = customClickAnim.replace("'", "\\'")
+                        webView?.evaluateJavascript("playNamedAnimation('$cleanList')", null)
                     }
                 }
             }
@@ -760,6 +758,9 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 key in listOf(WaifuPreferences.KEY_SCALE, WaifuPreferences.KEY_OFFSET_X, WaifuPreferences.KEY_OFFSET_Y) -> {
                     webView?.evaluateJavascript("setCustomScale(${prefs.scale})", null)
                     webView?.evaluateJavascript("setCustomOffset(${prefs.offsetX}, ${prefs.offsetY})", null)
+                }
+                key == WaifuPreferences.KEY_POINTER_TRACKING_ENABLED -> {
+                    webView?.evaluateJavascript("setPointerTrackingEnabled(${prefs.isPointerTrackingEnabled})", null)
                 }
                 key in listOf(
                     WaifuPreferences.KEY_BG_TYPE,

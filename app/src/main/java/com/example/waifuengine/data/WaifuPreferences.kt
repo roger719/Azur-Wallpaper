@@ -29,6 +29,7 @@ data class PresetItem(
     val selectedVariantLabel: String,
     val wakeupAnimation: String,
     val clickAnimation: String,
+    val isPointerTrackingEnabled: Boolean = true,
     val bgType: String,
     val bgColor: Int,
     val bgImagePath: String,
@@ -86,6 +87,10 @@ class WaifuPreferences(private val context: Context) {
     var clickAnimation: String
         get() = prefs.getString(KEY_CLICK_ANIM, "") ?: ""
         set(value) = prefs.edit { putString(KEY_CLICK_ANIM, value) }
+
+    var isPointerTrackingEnabled: Boolean
+        get() = prefs.getBoolean(KEY_POINTER_TRACKING_ENABLED, true)
+        set(value) = prefs.edit { putBoolean(KEY_POINTER_TRACKING_ENABLED, value) }
 
     var bgType: String
         get() = prefs.getString(KEY_BG_TYPE, TYPE_NONE) ?: TYPE_NONE
@@ -261,6 +266,7 @@ class WaifuPreferences(private val context: Context) {
                         selectedVariantLabel = obj.optString("selectedVariantLabel", ""),
                         wakeupAnimation = obj.optString("wakeupAnimation", ""),
                         clickAnimation = obj.optString("clickAnimation", ""),
+                        isPointerTrackingEnabled = obj.optBoolean("isPointerTrackingEnabled", true),
                         bgType = obj.optString("bgType", TYPE_NONE),
                         bgColor = obj.optInt("bgColor", 0xFF141418.toInt()),
                         bgImagePath = obj.optString("bgImagePath", ""),
@@ -303,6 +309,7 @@ class WaifuPreferences(private val context: Context) {
                 put("selectedVariantLabel", item.selectedVariantLabel)
                 put("wakeupAnimation", item.wakeupAnimation)
                 put("clickAnimation", item.clickAnimation)
+                put("isPointerTrackingEnabled", item.isPointerTrackingEnabled)
                 put("bgType", item.bgType)
                 put("bgColor", item.bgColor)
                 put("bgImagePath", item.bgImagePath)
@@ -391,6 +398,7 @@ class WaifuPreferences(private val context: Context) {
         const val KEY_VARIANT_LABEL = "key_variant_label"
         const val KEY_WAKEUP_ANIM = "key_wakeup_anim"
         const val KEY_CLICK_ANIM = "key_click_anim"
+        const val KEY_POINTER_TRACKING_ENABLED = "key_pointer_tracking_enabled"
         
         const val KEY_BG_TYPE = "key_bg_type"
         const val KEY_BG_COLOR = "key_bg_color"

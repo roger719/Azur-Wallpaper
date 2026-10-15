@@ -69,6 +69,7 @@ fun Live2DWebView(
     scale: Float = 1.0f,
     offsetX: Float = 0f,
     offsetY: Float = 0f,
+    isPointerTrackingEnabled: Boolean = true,
     doubleTapTrigger: Int = 0,
     cornerRadiusPx: Float = 0f,
     isAnimating: Boolean = false,
@@ -108,6 +109,7 @@ fun Live2DWebView(
         view ?: return
         view.evaluateJavascript("setCustomScale($scale)", null)
         view.evaluateJavascript("setCustomOffset($offsetX, $offsetY)", null)
+        view.evaluateJavascript("setPointerTrackingEnabled($isPointerTrackingEnabled)", null)
     }
 
     LaunchedEffect(isAnimating) {
@@ -125,7 +127,7 @@ fun Live2DWebView(
         applyTransform(view)
     }
 
-    LaunchedEffect(scale, offsetX, offsetY, isEngineReady, webViewRef) {
+    LaunchedEffect(scale, offsetX, offsetY, isPointerTrackingEnabled, isEngineReady, webViewRef) {
         if (isEngineReady) applyTransform(webViewRef)
     }
 

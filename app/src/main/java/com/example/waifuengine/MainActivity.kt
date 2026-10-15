@@ -374,6 +374,26 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
     var showRagebaitDisableDialog by remember { mutableStateOf(false) }
     var pinInputText by remember { mutableStateOf("") }
 
+    var isPointerTrackingEnabled by remember { mutableStateOf(prefs.isPointerTrackingEnabled) }
+    var wakeupAnimation by remember { mutableStateOf(prefs.wakeupAnimation) }
+    var clickAnimation by remember { mutableStateOf(prefs.clickAnimation) }
+
+    val availableMotions = remember(selectedCharacter) {
+        val folderPath = selectedCharacter?.folderPath.orEmpty()
+        val folderFile = File(folderPath)
+        if (folderPath.isNotEmpty() && folderFile.exists()) {
+            CharacterRepository.getAvailableMotionsForCharacter(folderFile)
+        } else {
+            listOf("Idle", "Action", "Touch", "Wakeup", "Special")
+        }
+    }
+
+    LaunchedEffect(selectedCharacter) {
+        wakeupAnimation = prefs.wakeupAnimation
+        clickAnimation = prefs.clickAnimation
+        isPointerTrackingEnabled = prefs.isPointerTrackingEnabled
+    }
+
     // GESTION DES PRÉSETS
     var userPresets by remember { mutableStateOf(prefs.getPresets()) }
     var showSavePresetDialog by remember { mutableStateOf(false) }
@@ -435,7 +455,6 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
     // Onglet actif (0 = personnage, 1 = personnalisation, 2 = planification)
     var activeTab by remember { mutableIntStateOf(prefs.activeTab.coerceIn(0, 2)) }
     var isFullscreen by remember { mutableStateOf(false) }
-    var isFullscreenLoading by remember { mutableStateOf(false) }
     var isFullscreenUiVisible by remember { mutableStateOf(true) }
     var cardOffset by remember { mutableStateOf(IntOffset.Zero) }
     var cardSize by remember { mutableStateOf(IntSize.Zero) }
@@ -833,8 +852,9 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                 offsetY = currentOffsetY,
                                 selectedCharacterName = prefs.selectedCharacterName,
                                 selectedVariantLabel = prefs.selectedVariantLabel,
-                                wakeupAnimation = prefs.wakeupAnimation,
-                                clickAnimation = prefs.clickAnimation,
+                                wakeupAnimation = wakeupAnimation,
+                                clickAnimation = clickAnimation,
+                                isPointerTrackingEnabled = isPointerTrackingEnabled,
                                 bgType = bgType,
                                 bgColor = pickedColor.toArgb(),
                                 bgImagePath = prefs.bgImagePath,
@@ -1849,6 +1869,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                         scale = currentScale,
                         offsetX = currentOffsetX,
                         offsetY = currentOffsetY,
+                        isPointerTrackingEnabled = isPointerTrackingEnabled,
                         doubleTapTrigger = doubleTapTrigger,
                         cornerRadiusPx = with(density) { 28.dp.toPx() },
                         isAnimating = false,
@@ -2264,6 +2285,14 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                                     currentOffsetX = preset.offsetX
                                                                     currentOffsetY = preset.offsetY
 
+                                                                    wakeupAnimation = preset.wakeupAnimation
+                                                                    clickAnimation = preset.clickAnimation
+                                                                    isPointerTrackingEnabled = preset.isPointerTrackingEnabled
+
+                                                                    prefs.wakeupAnimation = preset.wakeupAnimation
+                                                                    prefs.clickAnimation = preset.clickAnimation
+                                                                    prefs.isPointerTrackingEnabled = preset.isPointerTrackingEnabled
+
                                                                     bgType = preset.bgType
                                                                     pickedColor = Color(preset.bgColor)
 
@@ -2425,6 +2454,161 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                                 showDeleteDialog = true
                                                             }
                                                         )
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // SECTION ANIMATIONS & INTERACTION (EN DESSOUS DE L'ARBORESCENCE DANS L'ONGLET PERSONNAGE)
+                                        Card(
+                                            colors = CardDefaults.cardColors(containerColor = Color(0xFFD2E3F5)),
+                                            shape = RoundedCornerShape(16.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(12.dp),
+                                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                                            ) {
+                                                Text(
+                                                    text = "ANIMATIONS & INTERACTION",
+                                                    fontSize = 12.sp,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = nothingTextPrimary
+                                                )
+
+                                                // 1. BOUTON / INTERRUPTEUR DE SUIVI DU DOIGT (TÊTE / REGARD)
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text("Suivi du doigt (Tête/Regard)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                                        Text("Le personnage tourne la tête vers le doigt", fontSize = 10.sp, color = nothingTextSecondary)
+                                                    }
+                                                    Switch(
+                                                        checked = isPointerTrackingEnabled,
+                                                        onCheckedChange = { enabled ->
+                                                            isPointerTrackingEnabled = enabled
+                                                            prefs.isPointerTrackingEnabled = enabled
+                                                        }
+                                                    )
+                                                }
+
+                                                HorizontalDivider(color = nothingBorder)
+
+                                                // 2. SÉLECTION DES ANIMATIONS DE SORTIE DE VEILLE (DÉVERROUILLAGE)
+                                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    Text("Animation de sortie de veille (Déverrouillage) :", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                                    Text("Sélectionnez une ou plusieurs animations (choix aléatoire lors du déverrouillage)", fontSize = 10.sp, color = nothingTextSecondary)
+
+                                                    val selectedWakeupList = remember(wakeupAnimation) {
+                                                        wakeupAnimation.split(",").map { it.trim() }.filter { it.isNotEmpty() && !it.equals("NONE", ignoreCase = true) }.toSet()
+                                                    }
+                                                    val isWakeupNoneSelected = selectedWakeupList.isEmpty() || wakeupAnimation.equals("NONE", ignoreCase = true)
+
+                                                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                        item {
+                                                            FilterChip(
+                                                                selected = isWakeupNoneSelected,
+                                                                onClick = {
+                                                                    wakeupAnimation = "NONE"
+                                                                    prefs.wakeupAnimation = "NONE"
+                                                                },
+                                                                label = { Text("Aucune (Désactivée)", fontSize = 11.sp, fontWeight = if (isWakeupNoneSelected) FontWeight.Bold else FontWeight.Normal) },
+                                                                shape = RoundedCornerShape(12.dp),
+                                                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = nothingBlack, selectedLabelColor = Color.White)
+                                                            )
+                                                        }
+                                                        items(availableMotions) { motionName ->
+                                                            val isSelected = motionName in selectedWakeupList
+                                                            FilterChip(
+                                                                selected = isSelected,
+                                                                onClick = {
+                                                                    val newList = selectedWakeupList.toMutableSet()
+                                                                    if (isSelected) {
+                                                                        newList.remove(motionName)
+                                                                    } else {
+                                                                        newList.add(motionName)
+                                                                    }
+                                                                    val newStr = if (newList.isEmpty()) "NONE" else newList.joinToString(",")
+                                                                    wakeupAnimation = newStr
+                                                                    prefs.wakeupAnimation = newStr
+                                                                },
+                                                                label = {
+                                                                    Text(
+                                                                        text = motionName,
+                                                                        fontSize = 11.sp,
+                                                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                                                    )
+                                                                },
+                                                                shape = RoundedCornerShape(12.dp),
+                                                                colors = FilterChipDefaults.filterChipColors(
+                                                                    selectedContainerColor = nothingBlack,
+                                                                    selectedLabelColor = Color.White
+                                                                )
+                                                            )
+                                                        }
+                                                    }
+                                                }
+
+                                                HorizontalDivider(color = nothingBorder)
+
+                                                // 3. SÉLECTION DES ANIMATIONS AU TOUCHER (TAP / CLIC)
+                                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    Text("Animation au toucher (Clic / Tap) :", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                                    Text("Sélectionnez une ou plusieurs animations (choix aléatoire lors du toucher)", fontSize = 10.sp, color = nothingTextSecondary)
+
+                                                    val selectedClickList = remember(clickAnimation) {
+                                                        clickAnimation.split(",").map { it.trim() }.filter { it.isNotEmpty() && !it.equals("NONE", ignoreCase = true) }.toSet()
+                                                    }
+                                                    val isClickNoneSelected = selectedClickList.isEmpty() || clickAnimation.equals("NONE", ignoreCase = true)
+
+                                                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                        item {
+                                                            FilterChip(
+                                                                selected = isClickNoneSelected,
+                                                                onClick = {
+                                                                    clickAnimation = "NONE"
+                                                                    prefs.clickAnimation = "NONE"
+                                                                },
+                                                                label = { Text("Aucune (Désactivée)", fontSize = 11.sp, fontWeight = if (isClickNoneSelected) FontWeight.Bold else FontWeight.Normal) },
+                                                                shape = RoundedCornerShape(12.dp),
+                                                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = nothingBlack, selectedLabelColor = Color.White)
+                                                            )
+                                                        }
+                                                        items(availableMotions) { motionName ->
+                                                            val isSelected = motionName in selectedClickList
+                                                            FilterChip(
+                                                                selected = isSelected,
+                                                                onClick = {
+                                                                    val newList = selectedClickList.toMutableSet()
+                                                                    if (isSelected) {
+                                                                        newList.remove(motionName)
+                                                                    } else {
+                                                                        newList.add(motionName)
+                                                                    }
+                                                                    val newStr = if (newList.isEmpty()) "NONE" else newList.joinToString(",")
+                                                                    clickAnimation = newStr
+                                                                    prefs.clickAnimation = newStr
+                                                                },
+                                                                label = {
+                                                                    Text(
+                                                                        text = motionName,
+                                                                        fontSize = 11.sp,
+                                                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                                                    )
+                                                                },
+                                                                shape = RoundedCornerShape(12.dp),
+                                                                colors = FilterChipDefaults.filterChipColors(
+                                                                    selectedContainerColor = nothingBlack,
+                                                                    selectedLabelColor = Color.White
+                                                                )
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }
@@ -3170,6 +3354,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                         scale = currentScale,
                         offsetX = currentOffsetX,
                         offsetY = currentOffsetY,
+                        isPointerTrackingEnabled = isPointerTrackingEnabled,
                         doubleTapTrigger = doubleTapTrigger,
                         cornerRadiusPx = 0f,
                         isAnimating = false,

@@ -161,7 +161,7 @@
         function motionName(def) {
             if (!def) return "";
             const file = (def.File || def.file || "").split("/").pop();
-            return file.replace(/(\.anim)?\.motion3\.json$/i, "");
+            return file.replace(/(\.anim)?\.motion3(\.json)?$/i, "");
         }
 
         function setupMotions(m) {
@@ -275,17 +275,48 @@
             }
         }
 
+        let isPointerTrackingEnabled = true;
+
+        function setPointerTrackingEnabled(enabled) {
+            isPointerTrackingEnabled = !!enabled;
+            if (!isPointerTrackingEnabled && model && model.focus) {
+                try { model.focus(0, 0); } catch (e) {}
+            }
+        }
+
+        function setPointerPosition(x, y) {
+            if (!isPointerTrackingEnabled) return;
+            if (!model) return;
+            try {
+                model.focus(x, y);
+            } catch (e) {}
+        }
+
+        window.setPointerTrackingEnabled = setPointerTrackingEnabled;
+
         function playNamedAnimation(animName) {
             if (!model || !animName) return;
+            const cleanStr = String(animName).trim();
+            if (!cleanStr || cleanStr.toUpperCase() === "NONE") return;
+
             try {
+                let targetName = cleanStr;
+                if (cleanStr.includes(",")) {
+                    const list = cleanStr.split(",").map(s => s.trim()).filter(s => s.length > 0 && s.toUpperCase() !== "NONE");
+                    if (list.length === 0) return;
+                    targetName = list[Math.floor(Math.random() * list.length)];
+                }
+
                 const mm = model.internalModel.motionManager;
                 if (!mm || !mm.definitions) return;
 
-                const target = animName.trim().toLowerCase();
+                const target = targetName.trim().toLowerCase();
 
                 for (const groupKey of Object.keys(mm.definitions)) {
                     if (groupKey.toLowerCase() === target) {
-                        model.motion(groupKey, 0, 3);
+                        const defs = mm.definitions[groupKey];
+                        const randomIndex = (Array.isArray(defs) && defs.length > 0) ? Math.floor(Math.random() * defs.length) : 0;
+                        model.motion(groupKey, randomIndex, 3);
                         return;
                     }
                 }
@@ -294,7 +325,7 @@
                     if (Array.isArray(defs)) {
                         for (let i = 0; i < defs.length; i++) {
                             const name = motionName(defs[i]).toLowerCase();
-                            if (name && (name.includes(target) || target.includes(name))) {
+                            if (name && (name === target || name.includes(target) || target.includes(name))) {
                                 model.motion(groupKey, i, 3);
                                 return;
                             }
@@ -302,10 +333,9 @@
                     }
                 }
 
-                model.motion(animName, 0, 3);
+                model.motion(targetName, 0, 3);
             } catch (e) {
                 console.error("Play named motion error:", animName, e);
-                playActionAnimation();
             }
         }
 
