@@ -30,6 +30,11 @@ data class PresetItem(
     val wakeupAnimation: String,
     val clickAnimation: String,
     val isPointerTrackingEnabled: Boolean = true,
+    val isTouchZoneCustom: Boolean = false,
+    val touchZoneLeft: Float = 0.1f,
+    val touchZoneTop: Float = 0.2f,
+    val touchZoneWidth: Float = 0.8f,
+    val touchZoneHeight: Float = 0.6f,
     val bgType: String,
     val bgColor: Int,
     val bgImagePath: String,
@@ -91,6 +96,26 @@ class WaifuPreferences(private val context: Context) {
     var isPointerTrackingEnabled: Boolean
         get() = prefs.getBoolean(KEY_POINTER_TRACKING_ENABLED, true)
         set(value) = prefs.edit { putBoolean(KEY_POINTER_TRACKING_ENABLED, value) }
+
+    var isTouchZoneCustom: Boolean
+        get() = prefs.getBoolean(KEY_TOUCH_ZONE_CUSTOM, false)
+        set(value) = prefs.edit { putBoolean(KEY_TOUCH_ZONE_CUSTOM, value) }
+
+    var touchZoneLeft: Float
+        get() = prefs.getFloat(KEY_TOUCH_ZONE_LEFT, 0.1f)
+        set(value) = prefs.edit { putFloat(KEY_TOUCH_ZONE_LEFT, value) }
+
+    var touchZoneTop: Float
+        get() = prefs.getFloat(KEY_TOUCH_ZONE_TOP, 0.2f)
+        set(value) = prefs.edit { putFloat(KEY_TOUCH_ZONE_TOP, value) }
+
+    var touchZoneWidth: Float
+        get() = prefs.getFloat(KEY_TOUCH_ZONE_WIDTH, 0.8f)
+        set(value) = prefs.edit { putFloat(KEY_TOUCH_ZONE_WIDTH, value) }
+
+    var touchZoneHeight: Float
+        get() = prefs.getFloat(KEY_TOUCH_ZONE_HEIGHT, 0.6f)
+        set(value) = prefs.edit { putFloat(KEY_TOUCH_ZONE_HEIGHT, value) }
 
     var bgType: String
         get() = prefs.getString(KEY_BG_TYPE, TYPE_NONE) ?: TYPE_NONE
@@ -267,6 +292,11 @@ class WaifuPreferences(private val context: Context) {
                         wakeupAnimation = obj.optString("wakeupAnimation", ""),
                         clickAnimation = obj.optString("clickAnimation", ""),
                         isPointerTrackingEnabled = obj.optBoolean("isPointerTrackingEnabled", true),
+                        isTouchZoneCustom = obj.optBoolean("isTouchZoneCustom", false),
+                        touchZoneLeft = obj.optDouble("touchZoneLeft", 0.1).toFloat(),
+                        touchZoneTop = obj.optDouble("touchZoneTop", 0.2).toFloat(),
+                        touchZoneWidth = obj.optDouble("touchZoneWidth", 0.8).toFloat(),
+                        touchZoneHeight = obj.optDouble("touchZoneHeight", 0.6).toFloat(),
                         bgType = obj.optString("bgType", TYPE_NONE),
                         bgColor = obj.optInt("bgColor", 0xFF141418.toInt()),
                         bgImagePath = obj.optString("bgImagePath", ""),
@@ -310,6 +340,11 @@ class WaifuPreferences(private val context: Context) {
                 put("wakeupAnimation", item.wakeupAnimation)
                 put("clickAnimation", item.clickAnimation)
                 put("isPointerTrackingEnabled", item.isPointerTrackingEnabled)
+                put("isTouchZoneCustom", item.isTouchZoneCustom)
+                put("touchZoneLeft", item.touchZoneLeft)
+                put("touchZoneTop", item.touchZoneTop)
+                put("touchZoneWidth", item.touchZoneWidth)
+                put("touchZoneHeight", item.touchZoneHeight)
                 put("bgType", item.bgType)
                 put("bgColor", item.bgColor)
                 put("bgImagePath", item.bgImagePath)
@@ -399,6 +434,11 @@ class WaifuPreferences(private val context: Context) {
         const val KEY_WAKEUP_ANIM = "key_wakeup_anim"
         const val KEY_CLICK_ANIM = "key_click_anim"
         const val KEY_POINTER_TRACKING_ENABLED = "key_pointer_tracking_enabled"
+        const val KEY_TOUCH_ZONE_CUSTOM = "key_touch_zone_custom"
+        const val KEY_TOUCH_ZONE_LEFT = "key_touch_zone_left"
+        const val KEY_TOUCH_ZONE_TOP = "key_touch_zone_top"
+        const val KEY_TOUCH_ZONE_WIDTH = "key_touch_zone_width"
+        const val KEY_TOUCH_ZONE_HEIGHT = "key_touch_zone_height"
         
         const val KEY_BG_TYPE = "key_bg_type"
         const val KEY_BG_COLOR = "key_bg_color"

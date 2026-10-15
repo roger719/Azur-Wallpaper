@@ -378,6 +378,13 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
     var wakeupAnimation by remember { mutableStateOf(prefs.wakeupAnimation) }
     var clickAnimation by remember { mutableStateOf(prefs.clickAnimation) }
 
+    var isTouchZoneCustom by remember { mutableStateOf(prefs.isTouchZoneCustom) }
+    var touchZoneLeft by remember { mutableFloatStateOf(prefs.touchZoneLeft) }
+    var touchZoneTop by remember { mutableFloatStateOf(prefs.touchZoneTop) }
+    var touchZoneWidth by remember { mutableFloatStateOf(prefs.touchZoneWidth) }
+    var touchZoneHeight by remember { mutableFloatStateOf(prefs.touchZoneHeight) }
+    var showTouchZoneEditor by remember { mutableStateOf(false) }
+
     val availableMotions = remember(selectedCharacter) {
         val folderPath = selectedCharacter?.folderPath.orEmpty()
         val folderFile = File(folderPath)
@@ -392,6 +399,11 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
         wakeupAnimation = prefs.wakeupAnimation
         clickAnimation = prefs.clickAnimation
         isPointerTrackingEnabled = prefs.isPointerTrackingEnabled
+        isTouchZoneCustom = prefs.isTouchZoneCustom
+        touchZoneLeft = prefs.touchZoneLeft
+        touchZoneTop = prefs.touchZoneTop
+        touchZoneWidth = prefs.touchZoneWidth
+        touchZoneHeight = prefs.touchZoneHeight
     }
 
     // GESTION DES PRÉSETS
@@ -855,6 +867,11 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                 wakeupAnimation = wakeupAnimation,
                                 clickAnimation = clickAnimation,
                                 isPointerTrackingEnabled = isPointerTrackingEnabled,
+                                isTouchZoneCustom = isTouchZoneCustom,
+                                touchZoneLeft = touchZoneLeft,
+                                touchZoneTop = touchZoneTop,
+                                touchZoneWidth = touchZoneWidth,
+                                touchZoneHeight = touchZoneHeight,
                                 bgType = bgType,
                                 bgColor = pickedColor.toArgb(),
                                 bgImagePath = prefs.bgImagePath,
@@ -1014,6 +1031,67 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                 inactiveTrackColor = Color(0xFFB4CDEB)
                             )
                         )
+                    }
+
+                    HorizontalDivider(color = nothingBorder)
+
+                    // COMMANDE ZONE TACTILE PERSONNALISÉE
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Zone Tactile personnalisée", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                        Switch(
+                            checked = isTouchZoneCustom,
+                            onCheckedChange = { enabled ->
+                                isTouchZoneCustom = enabled
+                                prefs.isTouchZoneCustom = enabled
+                                showTouchZoneEditor = enabled
+                            }
+                        )
+                    }
+
+                    if (isTouchZoneCustom) {
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Largeur Zone Tactile", fontSize = 10.sp, color = nothingTextSecondary)
+                                Text("${(touchZoneWidth * 100).toInt()}%", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Slider(
+                                value = touchZoneWidth,
+                                onValueChange = {
+                                    touchZoneWidth = it
+                                    prefs.touchZoneWidth = it
+                                },
+                                valueRange = 0.1f..1.0f,
+                                colors = SliderDefaults.colors(thumbColor = Color.Red, activeTrackColor = Color.Red)
+                            )
+                        }
+
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Hauteur Zone Tactile", fontSize = 10.sp, color = nothingTextSecondary)
+                                Text("${(touchZoneHeight * 100).toInt()}%", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Slider(
+                                value = touchZoneHeight,
+                                onValueChange = {
+                                    touchZoneHeight = it
+                                    prefs.touchZoneHeight = it
+                                },
+                                valueRange = 0.1f..1.0f,
+                                colors = SliderDefaults.colors(thumbColor = Color.Red, activeTrackColor = Color.Red)
+                            )
+                        }
                     }
                 }
             },
@@ -2289,9 +2367,21 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                                     clickAnimation = preset.clickAnimation
                                                                     isPointerTrackingEnabled = preset.isPointerTrackingEnabled
 
+                                                                    isTouchZoneCustom = preset.isTouchZoneCustom
+                                                                    touchZoneLeft = preset.touchZoneLeft
+                                                                    touchZoneTop = preset.touchZoneTop
+                                                                    touchZoneWidth = preset.touchZoneWidth
+                                                                    touchZoneHeight = preset.touchZoneHeight
+
                                                                     prefs.wakeupAnimation = preset.wakeupAnimation
                                                                     prefs.clickAnimation = preset.clickAnimation
                                                                     prefs.isPointerTrackingEnabled = preset.isPointerTrackingEnabled
+
+                                                                    prefs.isTouchZoneCustom = preset.isTouchZoneCustom
+                                                                    prefs.touchZoneLeft = preset.touchZoneLeft
+                                                                    prefs.touchZoneTop = preset.touchZoneTop
+                                                                    prefs.touchZoneWidth = preset.touchZoneWidth
+                                                                    prefs.touchZoneHeight = preset.touchZoneHeight
 
                                                                     bgType = preset.bgType
                                                                     pickedColor = Color(preset.bgColor)
@@ -3405,6 +3495,83 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     )
                 }
 
+                // SURIMPOSITION DU CARRÉ ROUGE TRANSLUCIDE (ZONE TACTILE) EN PLEIN ÉCRAN
+                if (isFullscreen && (isTouchZoneCustom || showTouchZoneEditor)) {
+                    val density = LocalDensity.current
+                    val leftPx = touchZoneLeft * viewWidth
+                    val topPx = touchZoneTop * viewHeight
+                    val widthPx = touchZoneWidth * viewWidth
+                    val heightPx = touchZoneHeight * viewHeight
+
+                    val leftDp = with(density) { leftPx.toDp() }
+                    val topDp = with(density) { topPx.toDp() }
+                    val widthDp = with(density) { widthPx.toDp() }
+                    val heightDp = with(density) { heightPx.toDp() }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .zIndex(4f)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .offset(x = leftDp, y = topDp)
+                                .size(width = widthDp, height = heightDp)
+                                .background(Color.Red.copy(alpha = 0.35f))
+                                .border(2.dp, Color.Red, RoundedCornerShape(8.dp))
+                                .pointerInput(Unit) {
+                                    detectDragGestures { change, dragAmount ->
+                                        change.consume()
+                                        val deltaNormX = dragAmount.x / viewWidth
+                                        val deltaNormY = dragAmount.y / viewHeight
+                                        val newLeft = (touchZoneLeft + deltaNormX).coerceIn(0f, 1f - touchZoneWidth)
+                                        val newTop = (touchZoneTop + deltaNormY).coerceIn(0f, 1f - touchZoneHeight)
+                                        touchZoneLeft = newLeft
+                                        touchZoneTop = newTop
+                                        prefs.touchZoneLeft = newLeft
+                                        prefs.touchZoneTop = newTop
+                                    }
+                                }
+                        ) {
+                            Text(
+                                text = "ZONE TACTILE",
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .background(Color.Red)
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+
+                            // POIGNÉE DE REDIMENSIONNEMENT EN BAS À DROITE DU CARRÉ ROUGE
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .size(32.dp)
+                                    .background(Color.Red, CircleShape)
+                                    .pointerInput(Unit) {
+                                        detectDragGestures { change, dragAmount ->
+                                            change.consume()
+                                            val deltaNormX = dragAmount.x / viewWidth
+                                            val deltaNormY = dragAmount.y / viewHeight
+                                            val newWidth = (touchZoneWidth + deltaNormX).coerceIn(0.1f, 1f - touchZoneLeft)
+                                            val newHeight = (touchZoneHeight + deltaNormY).coerceIn(0.1f, 1f - touchZoneTop)
+                                            touchZoneWidth = newWidth
+                                            touchZoneHeight = newHeight
+                                            prefs.touchZoneWidth = newWidth
+                                            prefs.touchZoneHeight = newHeight
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("↘", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
                 // BARRE ET COMMANDES EN SURIMPOSITION DU PLEIN ÉCRAN
                 TopLevelAnimatedVisibility(
                     visible = isFullscreenUiVisible,
@@ -3458,7 +3625,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     }
                 }
 
-                // BOUTON REGLAGES (⚙) EN BAS À GAUCHE DU PLEIN ÉCRAN
+                // BOUTONS REGLAGES (⚙) ET ZONE TACTILE (🎯) EN BAS À GAUCHE DU PLEIN ÉCRAN
                 TopLevelAnimatedVisibility(
                     visible = isFullscreenUiVisible,
                     enter = fadeIn(tween(180, easing = LinearOutSlowInEasing)),
@@ -3469,23 +3636,54 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                         .padding(bottom = 24.dp, start = 20.dp)
                         .zIndex(6f)
                 ) {
-                    Surface(
-                        onClick = { showTransformDialog = true },
-                        shape = CircleShape,
-                        color = Color(0xFFEDF4FC).copy(alpha = 0.95f),
-                        border = BorderStroke(1.dp, nothingBorder),
-                        modifier = Modifier.size(52.dp)
-                    ) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier.fillMaxSize()
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Surface(
+                            onClick = { showTransformDialog = true },
+                            shape = CircleShape,
+                            color = Color(0xFFEDF4FC).copy(alpha = 0.95f),
+                            border = BorderStroke(1.dp, nothingBorder),
+                            modifier = Modifier.size(52.dp)
                         ) {
-                            Text(
-                                text = "⚙",
-                                fontSize = 22.sp,
-                                color = Color(0xFF0D1B3E),
-                                fontFamily = FontFamily.Monospace
-                            )
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                Text(
+                                    text = "⚙",
+                                    fontSize = 22.sp,
+                                    color = Color(0xFF0D1B3E),
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+
+                        Surface(
+                            onClick = {
+                                val nextState = !isTouchZoneCustom
+                                isTouchZoneCustom = nextState
+                                prefs.isTouchZoneCustom = nextState
+                                showTouchZoneEditor = nextState
+                                if (nextState) {
+                                    Toast.makeText(context, "Zone tactile activée ! Ajustez le carré rouge.", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "Zone tactile désactivée (Plein écran tactile).", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            shape = CircleShape,
+                            color = if (isTouchZoneCustom) Color.Red else Color(0xFFEDF4FC).copy(alpha = 0.95f),
+                            border = BorderStroke(1.dp, if (isTouchZoneCustom) Color.Red else nothingBorder),
+                            modifier = Modifier.size(52.dp)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                Text(
+                                    text = "🎯",
+                                    fontSize = 20.sp,
+                                    color = if (isTouchZoneCustom) Color.White else Color(0xFF0D1B3E)
+                                )
+                            }
                         }
                     }
                 }

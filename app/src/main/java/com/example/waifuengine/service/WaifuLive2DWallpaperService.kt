@@ -195,12 +195,29 @@ class WaifuLive2DWallpaperService : WallpaperService() {
             }
         }
 
+        private var surfaceWidth = 1080
+        private var surfaceHeight = 1920
+
         override fun onTouchEvent(event: MotionEvent?) {
             super.onTouchEvent(event)
             if (event == null || isSchedulePauseActive()) return
 
             val x = event.x
             val y = event.y
+
+            // VERIFICATION DE LA ZONE TACTILE PERSONNALISÉE
+            if (prefs.isTouchZoneCustom && surfaceWidth > 0 && surfaceHeight > 0) {
+                val normX = x / surfaceWidth.toFloat()
+                val normY = y / surfaceHeight.toFloat()
+                val left = prefs.touchZoneLeft
+                val top = prefs.touchZoneTop
+                val right = left + prefs.touchZoneWidth
+                val bottom = top + prefs.touchZoneHeight
+
+                if (normX !in left..right || normY !in top..bottom) {
+                    return
+                }
+            }
 
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
@@ -223,6 +240,9 @@ class WaifuLive2DWallpaperService : WallpaperService() {
         override fun onSurfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
             super.onSurfaceChanged(holder, format, width, height)
             if (width <= 0 || height <= 0) return
+
+            surfaceWidth = width
+            surfaceHeight = height
 
             if (virtualDisplay == null) {
                 createVirtualDisplayView(holder.surface, width, height)
