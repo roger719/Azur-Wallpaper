@@ -1,16 +1,24 @@
 package com.example.waifuengine.data
 
 import android.content.Context
+import com.example.waifuengine.spine.SpineModelHelper
 import org.json.JSONObject
 import java.io.File
 import java.io.InputStream
 import java.util.zip.ZipInputStream
+
+enum class EngineType {
+    LIVE2D,
+    SPINE
+}
 
 data class VariantInfo(
     val label: String,
     val modelJsonPath: String = "",
     val mocPath: String = "",
     val texturePaths: List<String> = emptyList(),
+    val spineAtlasPath: String = "",
+    val engineType: EngineType = EngineType.LIVE2D,
 )
 
 data class CharacterItem(
@@ -18,6 +26,7 @@ data class CharacterItem(
     val name: String,
     val folderPath: String = "",
     val isCustom: Boolean = true,
+    val engineType: EngineType = EngineType.LIVE2D,
     val variants: List<VariantInfo>,
 )
 
@@ -40,21 +49,44 @@ object CharacterRepository {
     }
 
     fun isLive2DDirectory(dir: File): Boolean {
-        if (!dir.isDirectory) return false
-        val files = dir.walkTopDown().toList()
-        return files.any {
-            it.isFile && (it.name.endsWith(".moc3", ignoreCase = true) || it.name.endsWith(".model3.json", ignoreCase = true) || it.name.endsWith(".moc", ignoreCase = true))
+        if (!dir.isDirectory || dir.name.equals("CustomSkins", ignoreCase = true)) return false
+        val files = dir.listFiles() ?: return false
+        val hasDirectLive2D = files.any {
+            it.isFile && (
+                it.name.endsWith(".moc3", ignoreCase = true) ||
+                it.name.endsWith(".model3.json", ignoreCase = true) ||
+                it.name.endsWith(".model.json", ignoreCase = true) ||
+                it.name.endsWith(".moc", ignoreCase = true)
+            )
         }
+        if (hasDirectLive2D) return true
+
+        // Cas d'un dossier avec display_name.txt contenant exactement un sous-dossier de modèle
+        if (File(dir, "display_name.txt").exists()) {
+            val subDirs = files.filter { it.isDirectory && !it.name.startsWith(".") }
+            if (subDirs.size == 1 && isLive2DDirectory(subDirs.first())) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    fun isSpineDirectory(dir: File): Boolean {
+        return SpineModelHelper.isSpineDirectory(dir)
     }
 
     fun isSkinDirectory(dir: File): Boolean {
-        if (!dir.isDirectory) return false
-        val files = dir.listFiles() ?: return false
-        return files.any { it.isFile && (it.name.endsWith(".moc3", ignoreCase = true) || it.name.endsWith(".model3.json", ignoreCase = true)) }
+        if (!dir.isDirectory || dir.name.equals("CustomSkins", ignoreCase = true)) return false
+        return isLive2DDirectory(dir) || isSpineDirectory(dir)
     }
 
-    fun getAvailableMotionsForCharacter(characterFolderFile: File): List<String> {
+    fun getAvailableMotionsForCharacter(characterFolderFile: File, engineType: EngineType = EngineType.LIVE2D): List<String> {
         if (!characterFolderFile.exists()) return emptyList()
+
+        if (engineType == EngineType.SPINE) {
+            return SpineModelHelper.getAvailableAnimationsForSpine(characterFolderFile)
+        }
 
         val motionSet = mutableSetOf<String>()
 
@@ -148,35 +180,104 @@ object CharacterRepository {
         return expressionSet.toList().sorted()
     }
 
-    private fun parseSkinDirectory(skinFolder: File): CharacterItem? {
-        if (isLive2DDirectory(skinFolder)) {
-            val mocFile = skinFolder.walkTopDown().firstOrNull { it.isFile && (it.name.endsWith(".moc3", ignoreCase = true) || it.name.endsWith(".moc", ignoreCase = true)) }
-            val modelJsonFile = skinFolder.walkTopDown().firstOrNull { it.isFile && it.name.endsWith(".model3.json", ignoreCase = true) }
-            val textureFiles = skinFolder.walkTopDown().filter { it.isFile && (it.name.endsWith(".png", ignoreCase = true) || it.name.endsWith(".jpg", ignoreCase = true)) }.map { it.absolutePath }.toList()
-
-            val displayNameFile = File(skinFolder, "display_name.txt")
-            val displayName = if (displayNameFile.exists()) {
-                displayNameFile.readText().trim().ifEmpty { skinFolder.name }
-            } else {
-                skinFolder.name
-            }
-
-            val variant = VariantInfo(
-                label = "Live2D Model",
-                mocPath = mocFile?.absolutePath ?: "",
-                modelJsonPath = modelJsonFile?.absolutePath ?: "",
-                texturePaths = textureFiles,
-            )
-
-            return CharacterItem(
-                id = "live2d_${skinFolder.hashCode()}",
-                name = displayName,
-                folderPath = skinFolder.absolutePath,
-                isCustom = true,
-                variants = listOf(variant),
+    private fun parseLive2DDirectory(skinFolder: File): CharacterItem? {
+        val mocFile = skinFolder.walkTopDown().firstOrNull { it.isFile && (it.name.endsWith(".moc3", ignoreCase = true) || it.name.endsWith(".moc", ignoreCase = true)) }
+        val modelJsonFile = skinFolder.walkTopDown().firstOrNull {
+            it.isFile && (
+                it.name.endsWith(".model3.json", ignoreCase = true) ||
+                it.name.endsWith(".model.json", ignoreCase = true) ||
+                (it.name.endsWith(".json", ignoreCase = true) &&
+                 !it.name.endsWith(".motion3.json", ignoreCase = true) &&
+                 !it.name.endsWith(".exp3.json", ignoreCase = true) &&
+                 !it.name.endsWith(".pose3.json", ignoreCase = true) &&
+                 !it.name.endsWith(".physics3.json", ignoreCase = true) &&
+                 !it.name.endsWith(".cdi3.json", ignoreCase = true) &&
+                 !it.name.endsWith(".atlas", ignoreCase = true))
             )
         }
-        return null
+        val textureFiles = skinFolder.walkTopDown().filter { it.isFile && (it.name.endsWith(".png", ignoreCase = true) || it.name.endsWith(".jpg", ignoreCase = true)) }.map { it.absolutePath }.toList()
+
+        var finalModelJsonFile = modelJsonFile
+        if (finalModelJsonFile == null && mocFile != null && textureFiles.isNotEmpty()) {
+            try {
+                val synthJson = File(mocFile.parentFile, "${mocFile.nameWithoutExtension}.model3.json")
+                val relMoc = mocFile.name
+                val relTextures = textureFiles.map { File(it).name }
+                val jsonObj = JSONObject().apply {
+                    put("Version", 3)
+                    put("FileReferences", JSONObject().apply {
+                        put("Moc", relMoc)
+                        put("Textures", org.json.JSONArray(relTextures))
+                    })
+                }
+                synthJson.writeText(jsonObj.toString(2))
+                finalModelJsonFile = synthJson
+            } catch (_: Exception) {}
+        }
+
+        val displayNameFile = File(skinFolder, "display_name.txt")
+        val parentDisplayNameFile = if (skinFolder.parentFile != null) File(skinFolder.parentFile, "display_name.txt") else null
+        val displayName = when {
+            displayNameFile.exists() -> displayNameFile.readText().trim().ifEmpty { skinFolder.name }
+            parentDisplayNameFile != null && parentDisplayNameFile.exists() -> parentDisplayNameFile.readText().trim().ifEmpty { skinFolder.name }
+            else -> skinFolder.name
+        }
+
+        val variant = VariantInfo(
+            label = "Live2D Model",
+            mocPath = mocFile?.absolutePath ?: "",
+            modelJsonPath = finalModelJsonFile?.absolutePath ?: (mocFile?.absolutePath ?: ""),
+            texturePaths = textureFiles,
+            engineType = EngineType.LIVE2D,
+        )
+
+        return CharacterItem(
+            id = "live2d_${skinFolder.hashCode()}",
+            name = displayName,
+            folderPath = skinFolder.absolutePath,
+            isCustom = true,
+            engineType = EngineType.LIVE2D,
+            variants = listOf(variant),
+        )
+    }
+
+    private fun parseSpineDirectory(skinFolder: File): CharacterItem? {
+        val skelOrJson = SpineModelHelper.findSkelOrJsonFile(skinFolder) ?: return null
+        val atlasFile = SpineModelHelper.findAtlasFile(skinFolder)
+        val textureFiles = SpineModelHelper.findTextureFiles(skinFolder)
+
+        val displayNameFile = File(skinFolder, "display_name.txt")
+        val parentDisplayNameFile = if (skinFolder.parentFile != null) File(skinFolder.parentFile, "display_name.txt") else null
+        val displayName = when {
+            displayNameFile.exists() -> displayNameFile.readText().trim().ifEmpty { skinFolder.name }
+            parentDisplayNameFile != null && parentDisplayNameFile.exists() -> parentDisplayNameFile.readText().trim().ifEmpty { skinFolder.name }
+            else -> skinFolder.name
+        }
+
+        val variant = VariantInfo(
+            label = "Spine Model",
+            modelJsonPath = skelOrJson.absolutePath,
+            spineAtlasPath = atlasFile?.absolutePath ?: "",
+            texturePaths = textureFiles,
+            engineType = EngineType.SPINE,
+        )
+
+        return CharacterItem(
+            id = "spine_${skinFolder.hashCode()}",
+            name = displayName,
+            folderPath = skinFolder.absolutePath,
+            isCustom = true,
+            engineType = EngineType.SPINE,
+            variants = listOf(variant),
+        )
+    }
+
+    private fun parseSkinDirectory(skinFolder: File): CharacterItem? {
+        return when {
+            isLive2DDirectory(skinFolder) -> parseLive2DDirectory(skinFolder)
+            isSpineDirectory(skinFolder) -> parseSpineDirectory(skinFolder)
+            else -> null
+        }
     }
 
     fun scanDirectoryNode(dir: File): FileNode {
@@ -226,7 +327,7 @@ object CharacterRepository {
             parseSkinDirectory(dir)?.let { result.add(it) }
         } else {
             dir.listFiles()?.forEach { child ->
-                if (child.isDirectory) {
+                if (child.isDirectory && !child.name.startsWith(".")) {
                     result.addAll(loadAllCustomCharacters(context, child))
                 }
             }

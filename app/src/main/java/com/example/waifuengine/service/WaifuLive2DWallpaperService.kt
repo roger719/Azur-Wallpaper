@@ -45,6 +45,8 @@ import android.widget.VideoView
 import androidx.webkit.WebViewAssetLoader
 import com.example.waifuengine.data.WaifuPreferences
 import com.example.waifuengine.live2d.Live2DUrlHelper
+import com.example.waifuengine.spine.SpineModelHelper
+import com.example.waifuengine.spine.SpineUrlHelper
 import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
@@ -59,7 +61,7 @@ class WaifuLive2DWallpaperService : WallpaperService() {
         return Live2DWallpaperEngine()
     }
 
-    // --- MOTEUR EXCLUSIF LIVE2D (WEBGL CUBISM VIA VIRTUAL DISPLAY) ---
+    // --- MOTEUR FOND D'ECRAN UNIFIE (LIVE2D & SPINE AUTO-SWITCH) ---
     inner class Live2DWallpaperEngine : Engine(), SharedPreferences.OnSharedPreferenceChangeListener {
 
         private var presentation: Presentation? = null
@@ -74,6 +76,10 @@ class WaifuLive2DWallpaperService : WallpaperService() {
         private var musicPlayer: MediaPlayer? = null
         private var assetLoader: WebViewAssetLoader? = null
         private var targetUrl = ""
+        private var targetModelUrlSpine = ""
+        private var targetAtlasUrlSpine = ""
+        private var currentLoadedEngine = ""
+        private var isEngineReady = false
         private var lastTouchTime = 0L
 
         private var isCurrentlyPaused: Boolean? = null
@@ -98,14 +104,12 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                         // ENERGY: Arrêter tout traitement GPU/CPU quand l'écran est éteint
                         webView?.evaluateJavascript("pauseRendering()", null)
                         webView?.onPause()
-                        webView?.pauseTimers()
                         clockHandler.removeCallbacks(clockRunnable)
                         syncAudioAndVideoState()
                     }
                     Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> {
                         // Reprendre le rendu quand l'écran se rallume
                         if (isVisible) {
-                            webView?.resumeTimers()
                             webView?.onResume()
                             webView?.evaluateJavascript("resumeRendering()", null)
                             if (prefs.isClockEnabled && !isKeyguardLocked()) {
@@ -157,12 +161,79 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 e.printStackTrace()
             }
 
-            updateTargetUrl()
+            updateTargetUrls()
             loadMusic()
         }
 
-        private fun updateTargetUrl() {
-            targetUrl = Live2DUrlHelper.convertToAssetUrl(this@WaifuLive2DWallpaperService, prefs.skelPath)
+        private fun isCurrentModelSpine(): Boolean {
+            return prefs.engineType.equals(WaifuPreferences.ENGINE_SPINE, ignoreCase = true) ||
+                   prefs.skelPath.endsWith(".skel", ignoreCase = true) ||
+                   SpineModelHelper.isSpineFile(prefs.skelPath)
+        }
+
+        private fun updateTargetUrls() {
+            if (isCurrentModelSpine()) {
+                val skelPath = prefs.skelPath
+                targetModelUrlSpine = SpineUrlHelper.convertToAssetUrl(this@WaifuLive2DWallpaperService, skelPath)
+                val atlasPref = prefs.spineAtlasPath
+                val atlasFile = if (atlasPref.isNotEmpty() && File(atlasPref).exists()) {
+                    File(atlasPref)
+                } else {
+                    val skelFile = File(skelPath)
+                    val parent = skelFile.parentFile
+                    if (parent != null && parent.exists()) SpineModelHelper.findAtlasFile(parent) else null
+                }
+                targetAtlasUrlSpine = if (atlasFile != null) {
+                    SpineUrlHelper.convertToAssetUrl(this@WaifuLive2DWallpaperService, atlasFile.absolutePath)
+                } else ""
+            } else {
+                targetUrl = Live2DUrlHelper.convertToAssetUrl(this@WaifuLive2DWallpaperService, prefs.skelPath)
+            }
+        }
+
+        private fun loadActiveModelInWebView() {
+            val wv = webView ?: return
+            if (!isEngineReady) return
+            val pauseActive = isSchedulePauseActive()
+            updateTargetUrls()
+
+            if (isCurrentModelSpine()) {
+                if (targetModelUrlSpine.isNotEmpty()) {
+                    val quotedModel = JSONObject.quote(targetModelUrlSpine)
+                    val quotedAtlas = if (targetAtlasUrlSpine.isNotEmpty()) JSONObject.quote(targetAtlasUrlSpine) else "null"
+                    wv.evaluateJavascript("loadModelFromAndroid($quotedModel, $quotedAtlas)", null)
+                    wv.evaluateJavascript("setCustomScale(${prefs.scale})", null)
+                    wv.evaluateJavascript("setCustomOffset(${prefs.offsetX}, ${prefs.offsetY})", null)
+                    wv.evaluateJavascript("setPointerTrackingEnabled(${prefs.isPointerTrackingEnabled})", null)
+                    wv.evaluateJavascript("setModelVisible(${!pauseActive})", null)
+                }
+            } else {
+                if (targetUrl.isNotEmpty()) {
+                    val quotedPath = JSONObject.quote(targetUrl)
+                    wv.evaluateJavascript("loadModelFromAndroid($quotedPath)", null)
+                    wv.evaluateJavascript("setCustomScale(${prefs.scale})", null)
+                    wv.evaluateJavascript("setCustomOffset(${prefs.offsetX}, ${prefs.offsetY})", null)
+                    wv.evaluateJavascript("setPointerTrackingEnabled(${prefs.isPointerTrackingEnabled})", null)
+                    wv.evaluateJavascript("setModelVisible(${!pauseActive})", null)
+                }
+            }
+        }
+
+        private fun ensureCorrectEngineLoaded(forceReloadModel: Boolean = false) {
+            val wv = webView ?: return
+            val neededEngine = if (isCurrentModelSpine()) WaifuPreferences.ENGINE_SPINE else WaifuPreferences.ENGINE_LIVE2D
+            if (currentLoadedEngine != neededEngine) {
+                currentLoadedEngine = neededEngine
+                isEngineReady = false
+                val url = if (neededEngine == WaifuPreferences.ENGINE_SPINE) {
+                    "https://appassets.androidview.local/assets/spine/index.html"
+                } else {
+                    "https://appassets.androidview.local/assets/live2d/index.html"
+                }
+                wv.loadUrl(url)
+            } else if (forceReloadModel) {
+                loadActiveModelInWebView()
+            }
         }
 
         // ENERGY: Cache pour éviter le ré-encodage Base64 de l'image de fond à chaque reload
@@ -333,24 +404,71 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                         webViewClient = object : WebViewClient() {
                             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                                 val url = request?.url ?: return null
-                                return try { assetLoader?.shouldInterceptRequest(url) } catch (_: Exception) { null }
+                                val defaultResponse = try { assetLoader?.shouldInterceptRequest(url) } catch (_: Exception) { null }
+                                if (defaultResponse != null) return defaultResponse
+
+                                if (url.host == "appassets.androidview.local") {
+                                    val path = url.path.orEmpty()
+                                    if (path.startsWith("/files/")) {
+                                        val relPath = Uri.decode(path.removePrefix("/files/").trimStart('/'))
+                                        val file = File(filesDir, relPath)
+                                        if (file.exists() && file.isFile) {
+                                            val ext = file.extension.lowercase()
+                                            val mimeType = when (ext) {
+                                                "json", "model3.json" -> "application/json"
+                                                "png" -> "image/png"
+                                                "jpg", "jpeg" -> "image/jpeg"
+                                                "webp" -> "image/webp"
+                                                "js" -> "application/javascript"
+                                                "css" -> "text/css"
+                                                "html" -> "text/html"
+                                                else -> "application/octet-stream"
+                                            }
+                                            return try {
+                                                val stream = java.io.FileInputStream(file)
+                                                val headers = mapOf("Access-Control-Allow-Origin" to "*")
+                                                WebResourceResponse(mimeType, "UTF-8", 200, "OK", headers, stream)
+                                            } catch (_: Exception) { null }
+                                        }
+                                    } else if (path.startsWith("/assets/")) {
+                                        val relPath = Uri.decode(path.removePrefix("/assets/").trimStart('/'))
+                                        val ext = relPath.substringAfterLast('.', "").lowercase()
+                                        val mimeType = when (ext) {
+                                            "json", "model3.json" -> "application/json"
+                                            "png" -> "image/png"
+                                            "jpg", "jpeg" -> "image/jpeg"
+                                            "webp" -> "image/webp"
+                                            "js" -> "application/javascript"
+                                            "css" -> "text/css"
+                                            "html" -> "text/html"
+                                            else -> "application/octet-stream"
+                                        }
+                                        return try {
+                                            val stream = assets.open(relPath)
+                                            val headers = mapOf("Access-Control-Allow-Origin" to "*")
+                                            WebResourceResponse(mimeType, "UTF-8", 200, "OK", headers, stream)
+                                        } catch (_: Exception) { null }
+                                    }
+                                }
+                                return null
                             }
 
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 super.onPageFinished(view, url)
                                 view?.onResume()
-                                view?.resumeTimers()
-                                if (targetUrl.isNotEmpty()) {
-                                    val quotedPath = JSONObject.quote(targetUrl)
-                                    evaluateJavascript("loadModelFromAndroid($quotedPath)", null)
-                                    evaluateJavascript("setCustomScale(${prefs.scale})", null)
-                                    evaluateJavascript("setCustomOffset(${prefs.offsetX}, ${prefs.offsetY})", null)
-                                    evaluateJavascript("setModelVisible(${!isSchedulePauseActive()})", null)
-                                    reloadBackground()
-                                }
+                                isEngineReady = true
+                                loadActiveModelInWebView()
+                                reloadBackground()
                             }
                         }
-                        loadUrl("https://appassets.androidview.local/assets/live2d/index.html")
+                        val initialEngine = if (isCurrentModelSpine()) WaifuPreferences.ENGINE_SPINE else WaifuPreferences.ENGINE_LIVE2D
+                        currentLoadedEngine = initialEngine
+                        val initialUrl = if (initialEngine == WaifuPreferences.ENGINE_SPINE) {
+                            "https://appassets.androidview.local/assets/spine/index.html"
+                        } else {
+                            "https://appassets.androidview.local/assets/live2d/index.html"
+                        }
+                        loadUrl(initialUrl)
                     }
 
                     rootLayout?.addView(bgVideoView)
@@ -714,7 +832,6 @@ class WaifuLive2DWallpaperService : WallpaperService() {
         override fun onVisibilityChanged(visible: Boolean) {
             super.onVisibilityChanged(visible)
             if (visible && isScreenInteractive() && !isKeyguardLocked()) {
-                webView?.resumeTimers()
                 webView?.onResume()
                 webView?.evaluateJavascript("resumeRendering()", null)
 
@@ -727,10 +844,9 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 checkAndApplySchedule(forceReload = true)
                 applyClockZOrderAndVisibility()
             } else {
-                // ENERGY: Arrêter complètement le rendu WebGL et les timers quand le wallpaper est masqué ou écran éteint
+                // ENERGY: Arrêter complètement le rendu WebGL quand le wallpaper est masqué ou écran éteint
                 webView?.evaluateJavascript("pauseRendering()", null)
                 webView?.onPause()
-                webView?.pauseTimers()
                 bgVideoView?.pause()
                 clockHandler.removeCallbacks(clockRunnable)
             }
@@ -768,12 +884,8 @@ class WaifuLive2DWallpaperService : WallpaperService() {
         override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
             if (key == null) return
             when {
-                key == WaifuPreferences.KEY_SKEL -> {
-                    updateTargetUrl()
-                    if (targetUrl.isNotEmpty()) {
-                        val quotedPath = JSONObject.quote(targetUrl)
-                        webView?.evaluateJavascript("loadModelFromAndroid($quotedPath)", null)
-                    }
+                key in listOf(WaifuPreferences.KEY_SKEL, WaifuPreferences.KEY_ENGINE_TYPE, WaifuPreferences.KEY_SPINE_ATLAS) -> {
+                    ensureCorrectEngineLoaded(forceReloadModel = true)
                 }
                 key in listOf(WaifuPreferences.KEY_SCALE, WaifuPreferences.KEY_OFFSET_X, WaifuPreferences.KEY_OFFSET_Y) -> {
                     webView?.evaluateJavascript("setCustomScale(${prefs.scale})", null)

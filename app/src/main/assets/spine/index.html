@@ -1,0 +1,480 @@
+<!doctype html>
+<html style="background: transparent !important; margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden">
+<head>
+    <meta charset="UTF-8" />
+    <script src="lib/pixi.min.js"></script>
+    <script src="lib/pixi-spine.umd.js"></script>
+    <style>
+        * { margin: 0; padding: 0; border: none; box-sizing: border-box; }
+        html, body {
+            background: transparent !important;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-position: center;
+            background-size: cover;
+            background-repeat: no-repeat;
+        }
+        #stage { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: transparent !important; }
+        canvas { display: block; width: 100%; height: 100%; background: transparent !important; }
+    </style>
+</head>
+<body style="background: transparent !important;">
+    <div id="stage"></div>
+    <script>
+        let app = null;
+        let model = null;
+        let loadToken = 0;
+        let pendingModelPath = null;
+        let pendingAtlasPath = null;
+        let currentLoadedPath = null;
+        let currentlyLoadingPath = null;
+
+        let customScale = 1.0;
+        let customOffsetX = 0.0;
+        let customOffsetY = 0.0;
+        let isModelVisible = true;
+        let isPointerTrackingEnabled = true;
+        let isRenderingPaused = false;
+        let isInitialized = false;
+        let initAttempts = 0;
+
+        function notifyAndroid(method, arg) {
+            try {
+                if (window.AzurSpine && typeof window.AzurSpine[method] === "function") {
+                    if (arg === undefined) {
+                        window.AzurSpine[method]();
+                    } else {
+                        window.AzurSpine[method](arg);
+                    }
+                }
+            } catch (e) {
+                console.error("notifyAndroid error:", e);
+            }
+        }
+
+        function setCustomScale(scale) {
+            if (typeof scale === "number" && !isNaN(scale) && scale > 0) {
+                customScale = scale;
+                fitModel();
+            }
+        }
+
+        function setCustomOffset(offsetX, offsetY) {
+            if (typeof offsetX === "number" && typeof offsetY === "number") {
+                customOffsetX = offsetX;
+                customOffsetY = offsetY;
+                fitModel();
+            }
+        }
+
+        function setPointerTrackingEnabled(enabled) {
+            isPointerTrackingEnabled = !!enabled;
+        }
+
+        function setPointerPosition(x, y) {
+            if (!isPointerTrackingEnabled || !model || !app) return;
+            try {
+                const screenW = app.renderer.screen.width;
+                const screenH = app.renderer.screen.height;
+                if (screenW <= 0 || screenH <= 0) return;
+                const normX = (x / screenW - 0.5) * 2.0;
+                const normY = (y / screenH - 0.5) * 2.0;
+
+                // Subtle tilt towards pointer for lifelike interaction
+                model.rotation = normX * 0.05;
+            } catch (e) {}
+        }
+
+        function setModelVisible(visible) {
+            isModelVisible = !!visible;
+            if (app && app.stage) {
+                app.stage.visible = isModelVisible;
+                if (isModelVisible && app.renderer) {
+                    app.renderer.render(app.stage);
+                }
+            }
+        }
+
+        function playNamedAnimation(animName) {
+            if (!model || !animName) return;
+            const cleanStr = String(animName).trim();
+            if (!cleanStr || cleanStr.toUpperCase() === "NONE") return;
+
+            try {
+                let targetName = cleanStr;
+                if (cleanStr.includes(",")) {
+                    const list = cleanStr.split(",").map(s => s.trim()).filter(s => s.length > 0 && s.toUpperCase() !== "NONE");
+                    if (list.length === 0) return;
+                    targetName = list[Math.floor(Math.random() * list.length)];
+                }
+
+                if (!model.state || !model.state.data || !model.state.data.skeletonData) return;
+                const anims = model.state.data.skeletonData.animations;
+                if (!anims || anims.length === 0) return;
+
+                const targetLower = targetName.toLowerCase();
+                const matched = anims.find(a => a.name.toLowerCase() === targetLower)
+                    || anims.find(a => a.name.toLowerCase().includes(targetLower) || targetLower.includes(a.name.toLowerCase()));
+
+                if (matched) {
+                    model.state.setAnimation(0, matched.name, false);
+                    const defaultAnim = anims.find(n => {
+                        const l = n.name.toLowerCase();
+                        return l.includes("idle") || l.includes("stand") || l.includes("normal") || l.includes("wait");
+                    }) || anims[0];
+                    if (defaultAnim) {
+                        model.state.addAnimation(0, defaultAnim.name, true, 0);
+                    }
+                }
+            } catch (e) {
+                console.error("Play named Spine animation error:", animName, e);
+            }
+        }
+
+        function playActionAnimation() {
+            if (!model || !model.state || !model.state.data || !model.state.data.skeletonData) return;
+            const anims = model.state.data.skeletonData.animations;
+            if (!anims || anims.length === 0) return;
+
+            const actionAnim = anims.find(a => {
+                const n = a.name.toLowerCase();
+                return n.includes("touch") || n.includes("tap") || n.includes("action") || n.includes("click") || n.includes("attack");
+            });
+
+            if (actionAnim) {
+                playNamedAnimation(actionAnim.name);
+            } else if (anims.length > 1) {
+                const nonIdle = anims.filter(a => !a.name.toLowerCase().includes("idle"));
+                const chosen = nonIdle.length > 0 ? nonIdle[Math.floor(Math.random() * nonIdle.length)] : anims[0];
+                playNamedAnimation(chosen.name);
+            }
+        }
+
+        function fitModel() {
+            if (!model || !app) return;
+            const screenW = app.renderer.screen.width;
+            const screenH = app.renderer.screen.height;
+            if (screenW <= 0 || screenH <= 0) {
+                requestAnimationFrame(fitModel);
+                return;
+            }
+
+            let nativeW = 0, nativeH = 0;
+            if (model.spineData && model.spineData.width && model.spineData.height && model.spineData.width > 0) {
+                nativeW = model.spineData.width;
+                nativeH = model.spineData.height;
+            } else {
+                try {
+                    const bounds = model.getLocalBounds();
+                    nativeW = bounds.width;
+                    nativeH = bounds.height;
+                } catch (e) {
+                    nativeW = 800;
+                    nativeH = 1200;
+                }
+            }
+
+            if (!nativeW || !nativeH || nativeW <= 0 || nativeH <= 0) {
+                nativeW = 800;
+                nativeH = 1200;
+                requestAnimationFrame(fitModel);
+            }
+
+            const baseScale = Math.min(screenW / nativeW, screenH / nativeH) * 0.85;
+            const finalScale = baseScale * customScale;
+
+            model.scale.set(finalScale);
+
+            const worldToScreenX = screenW / 800.0;
+            const worldToScreenY = screenH / 1280.0;
+
+            model.x = (screenW / 2) + (customOffsetX * worldToScreenX);
+            model.y = (screenH / 2) - (customOffsetY * worldToScreenY);
+
+            if (app && app.renderer) {
+                app.renderer.render(app.stage);
+            }
+        }
+
+        function loadModelFromAndroid(modelPath, atlasPath) {
+            if (!modelPath) return;
+            if (!modelPath.startsWith("file://") && !modelPath.startsWith("http")) {
+                modelPath = "file://" + modelPath;
+            }
+            if (atlasPath && !atlasPath.startsWith("file://") && !atlasPath.startsWith("http")) {
+                atlasPath = "file://" + atlasPath;
+            }
+
+            if (modelPath === currentLoadedPath && model) {
+                fitModel();
+                notifyAndroid("onModelLoaded", modelPath);
+                return;
+            }
+            if (modelPath === currentlyLoadingPath) {
+                return;
+            }
+            currentlyLoadingPath = modelPath;
+            if (!app) {
+                pendingModelPath = modelPath;
+                pendingAtlasPath = atlasPath;
+                init();
+                return;
+            }
+            loadSpineModel(modelPath, atlasPath);
+        }
+
+        let currentLoader = null;
+
+        function loadSpineModel(modelPath, atlasPath) {
+            const token = ++loadToken;
+            const loaderKey = "spine_model_" + token;
+
+            // Reset previous loader if running
+            if (currentLoader && currentLoader.loading) {
+                try {
+                    currentLoader.reset();
+                } catch (e) {}
+            }
+
+            const loader = new PIXI.Loader();
+            currentLoader = loader;
+
+            const options = {
+                metadata: {}
+            };
+            if (atlasPath) {
+                options.metadata.spineAtlasFile = atlasPath;
+            }
+
+            loader.add(loaderKey, modelPath, options);
+
+            loader.load((_, resources) => {
+                if (token !== loadToken) {
+                    try { loader.reset(); } catch (e) {}
+                    return;
+                }
+
+                const res = resources[loaderKey];
+                if (!res || !res.spineData) {
+                    console.error("Spine model failed to load spineData:", modelPath);
+                    currentlyLoadingPath = null;
+                    notifyAndroid("onModelError", modelPath);
+                    notifyAndroid("onModelLoaded", modelPath);
+                    try { loader.reset(); } catch (e) {}
+                    return;
+                }
+
+                if (model) {
+                    try {
+                        app.stage.removeChild(model);
+                        model.destroy({ children: true, texture: false, baseTexture: false });
+                    } catch (e) {}
+                }
+
+                try {
+                    model = new PIXI.spine.Spine(res.spineData);
+                    app.stage.addChild(model);
+                    currentLoadedPath = modelPath;
+                    currentlyLoadingPath = null;
+
+                    // Collect animation names
+                    const animNames = [];
+                    if (model.state && model.state.data && model.state.data.skeletonData && model.state.data.skeletonData.animations) {
+                        model.state.data.skeletonData.animations.forEach(a => {
+                            if (a.name) animNames.push(a.name);
+                        });
+                    }
+                    notifyAndroid("onAnimationsLoaded", JSON.stringify(animNames));
+
+                    // Default idle animation
+                    const defaultAnim = animNames.find(n => {
+                        const l = n.toLowerCase();
+                        return l.includes("idle") || l.includes("stand") || l.includes("normal") || l.includes("wait");
+                    }) || animNames[0];
+
+                    if (defaultAnim) {
+                        model.state.setAnimation(0, defaultAnim, true);
+                    }
+
+                    fitModel();
+
+                    if (app && app.stage) {
+                        app.stage.visible = isModelVisible;
+                    }
+                    if (app && app.renderer) {
+                        app.renderer.render(app.stage);
+                    }
+
+                    notifyAndroid("onModelLoaded", modelPath);
+
+                    // Multi-frame fitting stabilization
+                    requestAnimationFrame(() => {
+                        fitModel();
+                        if (app && app.renderer) app.renderer.render(app.stage);
+                    });
+                    setTimeout(() => {
+                        fitModel();
+                        if (app && app.renderer) app.renderer.render(app.stage);
+                    }, 80);
+                } catch (e) {
+                    console.error("Spine initialization error:", e);
+                    currentlyLoadingPath = null;
+                    notifyAndroid("onModelError", modelPath);
+                    notifyAndroid("onModelLoaded", modelPath);
+                }
+            });
+
+            loader.onError.add((err) => {
+                console.error("Loader error loading Spine model:", err);
+                if (token === loadToken) {
+                    currentlyLoadingPath = null;
+                    notifyAndroid("onModelError", modelPath);
+                    notifyAndroid("onModelLoaded", modelPath);
+                }
+            });
+        }
+
+        function pauseRendering() {
+            isRenderingPaused = true;
+            if (app && app.ticker && app.ticker.started) {
+                app.ticker.stop();
+            }
+        }
+
+        function resumeRendering() {
+            isRenderingPaused = false;
+            if (app && app.ticker && !app.ticker.started) {
+                app.ticker.start();
+            }
+            fitModel();
+        }
+
+        function readStageSize() {
+            const stage = document.getElementById("stage");
+            let w = (stage && stage.clientWidth) || window.innerWidth || 0;
+            let h = (stage && stage.clientHeight) || window.innerHeight || 0;
+            if (w <= 1 && typeof screen !== "undefined" && screen.width) w = screen.width;
+            if (h <= 1 && typeof screen !== "undefined" && screen.height) h = screen.height;
+            return { w: w, h: h };
+        }
+
+        function resizeToContainer(explicitW, explicitH) {
+            const measured = readStageSize();
+            const w = explicitW || measured.w;
+            const h = explicitH || measured.h;
+            if (!app) {
+                init();
+                return;
+            }
+            if (w > 1 && h > 1) {
+                const screen = app.renderer && app.renderer.screen;
+                if (!screen || screen.width !== w || screen.height !== h) {
+                    app.renderer.resize(w, h);
+                }
+                fitModel();
+            }
+        }
+
+        async function init() {
+            const stage = document.getElementById("stage");
+            if (!stage) return;
+
+            const size = readStageSize();
+            if (isInitialized) {
+                notifyAndroid("onEngineReady");
+                if (size.w > 1 && size.h > 1) {
+                    resizeToContainer(size.w, size.h);
+                }
+                return;
+            }
+
+            const initW = (size.w > 1) ? size.w : (window.innerWidth || 800);
+            const initH = (size.h > 1) ? size.h : (window.innerHeight || 1280);
+
+            isInitialized = true;
+
+            app = new PIXI.Application({
+                width: initW,
+                height: initH,
+                transparent: true,
+                backgroundAlpha: 0,
+                clearBeforeRender: true,
+                antialias: true,
+                autoDensity: true,
+                resolution: window.devicePixelRatio || 1,
+                sharedTicker: false
+            });
+
+            if (app.renderer && app.renderer.background) {
+                app.renderer.background.alpha = 0;
+            }
+            stage.appendChild(app.view);
+
+            if (app && app.stage) {
+                app.stage.visible = isModelVisible;
+            }
+
+            notifyAndroid("onEngineReady");
+
+            if (pendingModelPath) {
+                const pendingModel = pendingModelPath;
+                const pendingAtlas = pendingAtlasPath;
+                pendingModelPath = null;
+                pendingAtlasPath = null;
+                loadSpineModel(pendingModel, pendingAtlas);
+            }
+        }
+
+        function setCustomBackground(type, value, scale, offsetX, offsetY) {
+            const body = document.body;
+            if (!body) return;
+
+            if (type === "COLOR" && value) {
+                body.style.backgroundImage = "none";
+                body.style.backgroundColor = value;
+            } else if (type === "IMAGE" && value) {
+                body.style.backgroundColor = "transparent";
+                body.style.backgroundImage = `url("${value}")`;
+                const s = scale || 1.0;
+                const ox = offsetX || 0;
+                const oy = offsetY || 0;
+                body.style.backgroundPosition = `calc(50% + ${ox}px) calc(50% + ${oy}px)`;
+                body.style.backgroundSize = `${s * 100}% ${s * 100}%`;
+                body.style.backgroundRepeat = "no-repeat";
+            } else {
+                body.style.backgroundImage = "none";
+                body.style.backgroundColor = "transparent";
+            }
+        }
+
+        window.setCustomScale = setCustomScale;
+        window.setCustomOffset = setCustomOffset;
+        window.setCustomBackground = setCustomBackground;
+        window.setPointerPosition = setPointerPosition;
+        window.setPointerTrackingEnabled = setPointerTrackingEnabled;
+        window.setModelVisible = setModelVisible;
+        window.playActionAnimation = playActionAnimation;
+        window.playNamedAnimation = playNamedAnimation;
+        window.pauseRendering = pauseRendering;
+        window.resumeRendering = resumeRendering;
+        window.resizeToContainer = resizeToContainer;
+        window.loadModelFromAndroid = loadModelFromAndroid;
+        window.init = init;
+
+        window.addEventListener("resize", () => resizeToContainer());
+        if (typeof ResizeObserver !== "undefined") {
+            const stage = document.getElementById("stage");
+            if (stage) {
+                new ResizeObserver(() => resizeToContainer()).observe(stage);
+            }
+        }
+
+        if (document.readyState === "complete" || document.readyState === "interactive") {
+            setTimeout(init, 0);
+        } else {
+            document.addEventListener("DOMContentLoaded", init);
+        }
+    </script>
+</body>
+</html>

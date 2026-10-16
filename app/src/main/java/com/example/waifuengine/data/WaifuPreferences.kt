@@ -56,6 +56,7 @@ data class PresetItem(
     val clockPosition: String = "front",
     val clockOffsetX: Float = 0f,
     val clockOffsetY: Float = -350f,
+    val engineType: String = WaifuPreferences.ENGINE_LIVE2D,
 )
 
 class WaifuPreferences(private val context: Context) {
@@ -64,6 +65,14 @@ class WaifuPreferences(private val context: Context) {
     var skelPath: String
         get() = prefs.getString(KEY_SKEL, DEFAULT_SKEL) ?: DEFAULT_SKEL
         set(value) = prefs.edit { putString(KEY_SKEL, value) }
+
+    var engineType: String
+        get() = prefs.getString(KEY_ENGINE_TYPE, ENGINE_LIVE2D) ?: ENGINE_LIVE2D
+        set(value) = prefs.edit { putString(KEY_ENGINE_TYPE, value) }
+
+    var spineAtlasPath: String
+        get() = prefs.getString(KEY_SPINE_ATLAS, "") ?: ""
+        set(value) = prefs.edit { putString(KEY_SPINE_ATLAS, value) }
 
     var scale: Float
         get() = prefs.getFloat(KEY_SCALE, 1.0f)
@@ -317,7 +326,8 @@ class WaifuPreferences(private val context: Context) {
                         dateFormat = obj.optString("dateFormat", DATE_FORMAT_FULL),
                         clockPosition = obj.optString("clockPosition", CLOCK_POS_FRONT),
                         clockOffsetX = obj.optDouble("clockOffsetX", 0.0).toFloat(),
-                        clockOffsetY = obj.optDouble("clockOffsetY", -350.0).toFloat()
+                        clockOffsetY = obj.optDouble("clockOffsetY", -350.0).toFloat(),
+                        engineType = obj.optString("engineType", ENGINE_LIVE2D)
                     )
                 )
             }
@@ -332,6 +342,7 @@ class WaifuPreferences(private val context: Context) {
                 put("id", item.id)
                 put("name", item.name)
                 put("skelPath", item.skelPath)
+                put("engineType", item.engineType)
                 put("scale", item.scale)
                 put("offsetX", item.offsetX)
                 put("offsetY", item.offsetY)
@@ -426,6 +437,10 @@ class WaifuPreferences(private val context: Context) {
 
     companion object {
         const val KEY_SKEL = "key_skel"
+        const val KEY_ENGINE_TYPE = "key_engine_type"
+        const val KEY_SPINE_ATLAS = "key_spine_atlas"
+        const val ENGINE_LIVE2D = "LIVE2D"
+        const val ENGINE_SPINE = "SPINE"
         const val KEY_SCALE = "key_scale"
         const val KEY_OFFSET_X = "key_offset_x"
         const val KEY_OFFSET_Y = "key_offset_y"

@@ -134,13 +134,9 @@
 
         function setModelVisible(visible) {
             isModelVisible = !!visible;
-            const stage = document.getElementById("stage");
-            if (stage) {
-                stage.style.display = isModelVisible ? "block" : "none";
-            }
             if (app && app.stage) {
                 app.stage.visible = isModelVisible;
-                if (app.renderer) {
+                if (isModelVisible && app.renderer) {
                     app.renderer.render(app.stage);
                 }
             }
@@ -192,17 +188,25 @@
                 newModel = await PIXI.live2d.Live2DModel.from(path, { autoInteract: false });
             } catch (e) {
                 console.error("Erreur de chargement du modèle Live2D :", path, e);
-                currentlyLoadingPath = null;
+                if (token === loadToken) {
+                    currentlyLoadingPath = null;
+                    notifyAndroid("onModelError", path);
+                    notifyAndroid("onModelLoaded", path);
+                }
                 return false;
             }
             if (token !== loadToken) {
-                newModel.destroy();
+                try {
+                    newModel.destroy({ children: true, texture: false, baseTexture: false });
+                } catch (e) {}
                 return false;
             }
 
             if (model) {
-                app.stage.removeChild(model);
-                model.destroy();
+                try {
+                    app.stage.removeChild(model);
+                    model.destroy({ children: true, texture: false, baseTexture: false });
+                } catch (e) {}
             }
             model = newModel;
             currentLoadedPath = path;
@@ -222,6 +226,17 @@
 
             if (app && app.renderer) app.renderer.render(app.stage);
             notifyAndroid("onModelLoaded", path);
+
+            // Ticker & size stabilization passes to prevent black screen / invisible mesh
+            requestAnimationFrame(() => {
+                fitModel();
+                if (app && app.renderer) app.renderer.render(app.stage);
+            });
+            setTimeout(() => {
+                fitModel();
+                if (app && app.renderer) app.renderer.render(app.stage);
+            }, 80);
+
             return true;
         }
 
@@ -230,14 +245,28 @@
 
             const screenW = app.renderer.screen.width;
             const screenH = app.renderer.screen.height;
-            if (screenW <= 0 || screenH <= 0) return;
+            if (screenW <= 0 || screenH <= 0) {
+                requestAnimationFrame(fitModel);
+                return;
+            }
 
-            const nativeW = (model.internalModel && model.internalModel.width) ? model.internalModel.width : (model.width / model.scale.x);
-            const nativeH = (model.internalModel && model.internalModel.height) ? model.internalModel.height : (model.height / model.scale.y);
+            let nativeW = (model.internalModel && model.internalModel.width) ? model.internalModel.width : (model.width / (model.scale.x || 1));
+            let nativeH = (model.internalModel && model.internalModel.height) ? model.internalModel.height : (model.height / (model.scale.y || 1));
 
-            if (!nativeW || !nativeH || nativeW <= 0 || nativeH <= 0) return;
+            if (!nativeW || !nativeH || nativeW <= 0 || nativeH <= 0) {
+                if (model.internalModel && model.internalModel.originalWidth && model.internalModel.originalHeight) {
+                    nativeW = model.internalModel.originalWidth;
+                    nativeH = model.internalModel.originalHeight;
+                } else {
+                    nativeW = 800;
+                    nativeH = 1200;
+                    requestAnimationFrame(fitModel);
+                }
+            }
 
-            model.anchor.set(0.5, 0.5);
+            if (model.anchor && typeof model.anchor.set === "function") {
+                model.anchor.set(0.5, 0.5);
+            }
 
             const baseScale = Math.min(screenW / nativeW, screenH / nativeH) * 0.85;
             const finalScale = baseScale * customScale;
@@ -346,17 +375,15 @@
         let isRenderingPaused = false;
 
         function pauseRendering() {
-            if (isRenderingPaused) return;
             isRenderingPaused = true;
-            if (app && app.ticker) {
+            if (app && app.ticker && app.ticker.started) {
                 app.ticker.stop();
             }
         }
 
         function resumeRendering() {
-            if (!isRenderingPaused) return;
             isRenderingPaused = false;
-            if (app && app.ticker) {
+            if (app && app.ticker && !app.ticker.started) {
                 app.ticker.start();
             }
             fitModel();
@@ -370,8 +397,10 @@
 
         function readStageSize() {
             const stage = document.getElementById("stage");
-            const w = (stage && stage.clientWidth) || window.innerWidth || 0;
-            const h = (stage && stage.clientHeight) || window.innerHeight || 0;
+            let w = (stage && stage.clientWidth) || window.innerWidth || 0;
+            let h = (stage && stage.clientHeight) || window.innerHeight || 0;
+            if (w <= 1 && typeof screen !== "undefined" && screen.width) w = screen.width;
+            if (h <= 1 && typeof screen !== "undefined" && screen.height) h = screen.height;
             return { w: w, h: h };
         }
 
@@ -379,19 +408,17 @@
             const measured = readStageSize();
             const w = explicitW || measured.w;
             const h = explicitH || measured.h;
-            if (!w || !h || w <= 1 || h <= 1) {
-                if (!isInitialized) init();
-                return;
-            }
             if (!app) {
                 init();
                 return;
             }
-            const screen = app.renderer && app.renderer.screen;
-            if (!screen || screen.width !== w || screen.height !== h) {
-                app.renderer.resize(w, h);
+            if (w > 1 && h > 1) {
+                const screen = app.renderer && app.renderer.screen;
+                if (!screen || screen.width !== w || screen.height !== h) {
+                    app.renderer.resize(w, h);
+                }
+                fitModel();
             }
-            fitModel();
         }
 
         async function init() {
@@ -399,23 +426,22 @@
             if (!stage) return;
 
             const size = readStageSize();
-            if (size.w <= 1 || size.h <= 1) {
-                if (++initAttempts < 180) {
-                    requestAnimationFrame(init);
+            if (isInitialized) {
+                notifyAndroid("onEngineReady");
+                if (size.w > 1 && size.h > 1) {
+                    resizeToContainer(size.w, size.h);
                 }
                 return;
             }
 
-            if (isInitialized) {
-                notifyAndroid("onEngineReady");
-                resizeToContainer(size.w, size.h);
-                return;
-            }
+            const initW = (size.w > 1) ? size.w : (window.innerWidth || 800);
+            const initH = (size.h > 1) ? size.h : (window.innerHeight || 1280);
+
             isInitialized = true;
 
             app = new PIXI.Application({
-                width: size.w,
-                height: size.h,
+                width: initW,
+                height: initH,
                 transparent: true,
                 backgroundAlpha: 0,
                 clearBeforeRender: true,

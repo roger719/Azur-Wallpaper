@@ -13,8 +13,8 @@ android {
         applicationId = "com.example.waifuengine"
         minSdk = 24
         targetSdk = 37
-        versionCode = 15
-        versionName = "1.5"
+        versionCode = 16
+        versionName = "1.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -48,6 +48,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.fragment.ktx)
     implementation("androidx.webkit:webkit:1.12.1")
+    implementation(libs.gdx)
+    implementation(libs.gdx.backend.android)
+    implementation(libs.spine.libgdx)
     implementation(libs.gson)
 
     testImplementation(libs.junit)

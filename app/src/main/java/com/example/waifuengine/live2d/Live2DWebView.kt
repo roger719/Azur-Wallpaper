@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
@@ -18,6 +19,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
@@ -28,17 +30,24 @@ import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewAssetLoader.AssetsPathHandler
 import androidx.webkit.WebViewAssetLoader.InternalStoragePathHandler
 import org.json.JSONObject
+import java.io.File
+import java.io.FileInputStream
 
 object Live2DUrlHelper {
     fun convertToAssetUrl(context: Context, absolutePath: String): String {
         if (absolutePath.isEmpty()) return ""
-        val filesDirStr = context.filesDir.absolutePath
-        return if (absolutePath.startsWith(filesDirStr)) {
-            val rel = absolutePath.substring(filesDirStr.length).replace("\\", "/")
-            val encodedRel = rel.split("/").joinToString("/") { Uri.encode(it) }
-            "https://appassets.androidview.local/files$encodedRel"
+        val cleanPath = if (absolutePath.startsWith("file://")) {
+            absolutePath.removePrefix("file://")
         } else {
             absolutePath
+        }
+        val filesDirStr = context.filesDir.absolutePath
+        return if (cleanPath.startsWith(filesDirStr)) {
+            val relativePath = cleanPath.substring(filesDirStr.length).replace("\\", "/").trimStart('/')
+            val encodedPath = relativePath.split("/").filter { it.isNotEmpty() }.joinToString("/") { Uri.encode(it) }
+            "https://appassets.androidview.local/files/$encodedPath"
+        } else {
+            cleanPath
         }
     }
 }
@@ -60,6 +69,12 @@ private class Live2DJsBridge(
     fun onModelLoaded(path: String?) {
         handler.post { onModelLoaded(path.orEmpty()) }
     }
+
+    @Keep
+    @JavascriptInterface
+    fun onModelError(path: String?) {
+        handler.post { onModelLoaded(path.orEmpty()) }
+    }
 }
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -73,6 +88,7 @@ fun Live2DWebView(
     doubleTapTrigger: Int = 0,
     cornerRadiusPx: Float = 0f,
     isAnimating: Boolean = false,
+    isActive: Boolean = true,
     onModelLoaded: ((loadedUrl: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -83,6 +99,20 @@ fun Live2DWebView(
 
     val onModelLoadedState = rememberUpdatedState(onModelLoaded)
     val cornerRadiusState = rememberUpdatedState(cornerRadiusPx)
+
+    DisposableEffect(Unit) {
+        onDispose {
+            webViewRef?.let { wv ->
+                try {
+                    (wv.parent as? ViewGroup)?.removeView(wv)
+                    wv.stopLoading()
+                    wv.removeAllViews()
+                    wv.destroy()
+                } catch (_: Exception) {}
+            }
+            webViewRef = null
+        }
+    }
 
     val assetLoader = remember {
         try {
@@ -112,28 +142,50 @@ fun Live2DWebView(
         view.evaluateJavascript("setPointerTrackingEnabled($isPointerTrackingEnabled)", null)
     }
 
-    LaunchedEffect(isAnimating) {
-        if (!isAnimating && isEngineReady && webViewRef != null) {
-            webViewRef?.evaluateJavascript("resizeToContainer()", null)
+    // Gestion de l'état actif / inactif (pause et reprise du rendu PIXI)
+    LaunchedEffect(isActive, isEngineReady, webViewRef) {
+        val view = webViewRef ?: return@LaunchedEffect
+        if (!isEngineReady) return@LaunchedEffect
+        if (isActive) {
+            view.evaluateJavascript("setModelVisible(true)", null)
+            view.evaluateJavascript("resumeRendering()", null)
+            view.evaluateJavascript("resizeToContainer()", null)
+            applyTransform(view)
+        } else {
+            view.evaluateJavascript("setModelVisible(false)", null)
+            view.evaluateJavascript("pauseRendering()", null)
         }
     }
 
-    LaunchedEffect(targetUrl, isEngineReady, webViewRef) {
+    // Chargement du modèle
+    LaunchedEffect(targetUrl, isActive, isEngineReady, webViewRef) {
         val view = webViewRef ?: return@LaunchedEffect
-        if (!isEngineReady || targetUrl.isEmpty()) return@LaunchedEffect
+        if (!isEngineReady || !isActive || targetUrl.isEmpty()) return@LaunchedEffect
         enforceStatusBarHidden()
         val quotedPath = JSONObject.quote(targetUrl)
         view.evaluateJavascript("loadModelFromAndroid($quotedPath)", null)
         applyTransform(view)
+        view.evaluateJavascript("resizeToContainer()", null)
     }
 
-    LaunchedEffect(scale, offsetX, offsetY, isPointerTrackingEnabled, isEngineReady, webViewRef) {
-        if (isEngineReady) applyTransform(webViewRef)
+    // Application des transformations
+    LaunchedEffect(scale, offsetX, offsetY, isPointerTrackingEnabled, isEngineReady, webViewRef, isActive) {
+        if (isEngineReady && isActive) {
+            applyTransform(webViewRef)
+        }
     }
 
+    // Déclenchement de l'animation lors du double-tap
     LaunchedEffect(doubleTapTrigger) {
-        if (isEngineReady && doubleTapTrigger > 0) {
+        if (isEngineReady && isActive && doubleTapTrigger > 0) {
             webViewRef?.evaluateJavascript("playActionAnimation()", null)
+        }
+    }
+
+    // Ajustement de la taille lors des animations
+    LaunchedEffect(isAnimating) {
+        if (!isAnimating && isEngineReady && webViewRef != null && isActive) {
+            webViewRef?.evaluateJavascript("resizeToContainer()", null)
         }
     }
 
@@ -142,6 +194,7 @@ fun Live2DWebView(
             isEngineReady = false
             WebView(ctx).apply {
                 webViewRef = this
+                setLayerType(View.LAYER_TYPE_HARDWARE, null)
                 settings.javaScriptEnabled = true
                 settings.allowFileAccess = true
                 settings.allowContentAccess = true
@@ -152,7 +205,6 @@ fun Live2DWebView(
                 overScrollMode = View.OVER_SCROLL_NEVER
                 isNestedScrollingEnabled = false
                 setBackgroundColor(AndroidColor.TRANSPARENT)
-                setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
                 addJavascriptInterface(
                     Live2DJsBridge(
@@ -185,17 +237,62 @@ fun Live2DWebView(
                         request: WebResourceRequest?
                     ): WebResourceResponse? {
                         val url = request?.url ?: return null
-                        return try {
+                        val defaultResponse = try {
                             assetLoader?.shouldInterceptRequest(url)
                         } catch (_: Exception) {
                             null
                         }
+                        if (defaultResponse != null) return defaultResponse
+
+                        // Fallback direct si assetLoader ne résout pas la ressource locale
+                        if (url.host == "appassets.androidview.local") {
+                            val path = url.path.orEmpty()
+                            if (path.startsWith("/files/")) {
+                                val relPath = Uri.decode(path.removePrefix("/files/").trimStart('/'))
+                                val file = File(context.filesDir, relPath)
+                                if (file.exists() && file.isFile) {
+                                    val ext = file.extension.lowercase()
+                                    val mimeType = when (ext) {
+                                        "json", "model3.json" -> "application/json"
+                                        "png" -> "image/png"
+                                        "jpg", "jpeg" -> "image/jpeg"
+                                        "webp" -> "image/webp"
+                                        "js" -> "application/javascript"
+                                        "css" -> "text/css"
+                                        "html" -> "text/html"
+                                        else -> "application/octet-stream"
+                                    }
+                                    return try {
+                                        val stream = FileInputStream(file)
+                                        val headers = mapOf("Access-Control-Allow-Origin" to "*")
+                                        WebResourceResponse(mimeType, "UTF-8", 200, "OK", headers, stream)
+                                    } catch (_: Exception) { null }
+                                }
+                            } else if (path.startsWith("/assets/")) {
+                                val relPath = Uri.decode(path.removePrefix("/assets/").trimStart('/'))
+                                val ext = relPath.substringAfterLast('.', "").lowercase()
+                                val mimeType = when (ext) {
+                                    "json", "model3.json" -> "application/json"
+                                    "png" -> "image/png"
+                                    "jpg", "jpeg" -> "image/jpeg"
+                                    "webp" -> "image/webp"
+                                    "js" -> "application/javascript"
+                                    "css" -> "text/css"
+                                    "html" -> "text/html"
+                                    else -> "application/octet-stream"
+                                }
+                                return try {
+                                    val stream = context.assets.open(relPath)
+                                    val headers = mapOf("Access-Control-Allow-Origin" to "*")
+                                    WebResourceResponse(mimeType, "UTF-8", 200, "OK", headers, stream)
+                                } catch (_: Exception) { null }
+                            }
+                        }
+                        return null
                     }
 
                     override fun onPageFinished(view: WebView?, url: String?) {
                         super.onPageFinished(view, url)
-                        view?.onResume()
-                        view?.resumeTimers()
                         view?.evaluateJavascript("init()", null)
                         enforceStatusBarHidden()
                     }
@@ -205,6 +302,9 @@ fun Live2DWebView(
             }
         },
         update = { view ->
+            view.isEnabled = isActive
+            view.isClickable = isActive
+            view.isFocusable = isActive
             val radius = cornerRadiusState.value
             view.outlineProvider = object : ViewOutlineProvider() {
                 override fun getOutline(target: View, outline: Outline) {
@@ -215,10 +315,12 @@ fun Live2DWebView(
             view.clipToOutline = radius > 0.5f
             view.invalidateOutline()
         },
-        modifier = modifier.onSizeChanged { size ->
-            if (!isAnimating && size.width > 0 && size.height > 0 && isEngineReady) {
-                webViewRef?.evaluateJavascript("resizeToContainer()", null)
+        modifier = modifier
+            .alpha(if (isActive) 1f else 0f)
+            .onSizeChanged { size ->
+                if (!isAnimating && size.width > 0 && size.height > 0 && isEngineReady && isActive) {
+                    webViewRef?.evaluateJavascript("resizeToContainer()", null)
+                }
             }
-        }
     )
 }

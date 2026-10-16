@@ -77,14 +77,20 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.FragmentActivity
+import android.webkit.WebView
 import com.example.waifuengine.data.CharacterItem
 import com.example.waifuengine.data.CharacterRepository
+import com.example.waifuengine.data.EngineType
 import com.example.waifuengine.data.FileNode
 import com.example.waifuengine.data.PresetItem
 import com.example.waifuengine.data.WaifuPreferences
 import com.example.waifuengine.live2d.Live2DUrlHelper
 import com.example.waifuengine.live2d.Live2DWebView
+import com.example.waifuengine.spine.SpineModelHelper
+import com.example.waifuengine.spine.SpineUrlHelper
+import com.example.waifuengine.spine.SpineWebView
 import com.example.waifuengine.service.WaifuLive2DWallpaperService
+import com.example.waifuengine.service.WaifuSpineWallpaperService
 import com.example.waifuengine.ui.theme.WaifuEngineTheme
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -134,6 +140,9 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         hideSystemBars()
+        try {
+            WebView(this).resumeTimers()
+        } catch (_: Exception) {}
 
         setContent {
             WaifuEngineTheme {
@@ -153,6 +162,9 @@ class MainActivity : FragmentActivity() {
     override fun onResume() {
         super.onResume()
         hideSystemBars()
+        try {
+            WebView(this).resumeTimers()
+        } catch (_: Exception) {}
     }
 }
 
@@ -314,22 +326,6 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
         onDispose {}
     }
 
-    var isModelLoading by remember { mutableStateOf(false) }
-    var modelLoadGeneration by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(currentSkelPath) {
-        val generation = modelLoadGeneration + 1
-        modelLoadGeneration = generation
-        if (currentSkelPath.isEmpty()) {
-            isModelLoading = false
-            return@LaunchedEffect
-        }
-        isModelLoading = true
-        delay(8000L)
-        if (modelLoadGeneration == generation) {
-            isModelLoading = false
-        }
-    }
 
     val updateSelectedCharacterAndVariant: (CharacterItem) -> Unit = { charItem ->
         selectedCharacter = charItem
@@ -386,10 +382,11 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
     var showTouchZoneEditor by remember { mutableStateOf(false) }
 
     val availableMotions = remember(selectedCharacter) {
-        val folderPath = selectedCharacter?.folderPath.orEmpty()
+        val char = selectedCharacter
+        val folderPath = char?.folderPath.orEmpty()
         val folderFile = File(folderPath)
         if (folderPath.isNotEmpty() && folderFile.exists()) {
-            CharacterRepository.getAvailableMotionsForCharacter(folderFile)
+            CharacterRepository.getAvailableMotionsForCharacter(folderFile, char?.engineType ?: EngineType.LIVE2D)
         } else {
             listOf("Idle", "Action", "Touch", "Wakeup", "Special")
         }
@@ -773,6 +770,8 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
         if ((variant != null) && (charItem != null)) {
             // Sauvegarder la configuration choisie dans les préférences uniquement au clic sur APPLIQUER
             prefs.skelPath = variant.modelJsonPath.ifEmpty { variant.mocPath }
+            prefs.spineAtlasPath = variant.spineAtlasPath
+            prefs.engineType = charItem.engineType.name
             prefs.selectedCharacterName = charItem.name
             prefs.selectedVariantLabel = variant.label
             prefs.scale = currentScale
@@ -783,20 +782,30 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                 prefs.bgColor = pickedColor.toArgb()
             }
 
-            Toast.makeText(context, "Configuration sauvegardée : ${charItem.name}", Toast.LENGTH_SHORT).show()
+            val targetServiceClass = if (charItem.engineType == EngineType.SPINE) {
+                WaifuSpineWallpaperService::class.java
+            } else {
+                WaifuLive2DWallpaperService::class.java
+            }
+            val wallpaperManager = WallpaperManager.getInstance(context)
+            val currentService = wallpaperManager.wallpaperInfo?.serviceName
+            val isWallpaperActive = currentService == targetServiceClass.name
 
-            val targetServiceClass = WaifuLive2DWallpaperService::class.java
+            if (!isWallpaperActive) {
 
-            try {
-                val intent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
-                    putExtra(
-                        WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
-                        ComponentName(context, targetServiceClass),
-                    )
+                try {
+                    val intent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
+                        putExtra(
+                            WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
+                            ComponentName(context, targetServiceClass),
+                        )
+                    }
+                    context.startActivity(intent)
+                } catch (_: Exception) {
+                    Toast.makeText(context, "Erreur lors de l'ouverture du fond d'écran", Toast.LENGTH_LONG).show()
                 }
-                context.startActivity(intent)
-            } catch (_: Exception) {
-                Toast.makeText(context, "Erreur lors de l'ouverture du fond d'écran", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(context, "Fond d'écran actualisé : ${charItem.name}", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -892,7 +901,8 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                 dateFormat = dateFormat,
                                 clockPosition = clockPosition,
                                 clockOffsetX = clockOffsetX,
-                                clockOffsetY = clockOffsetY
+                                clockOffsetY = clockOffsetY,
+                                engineType = (selectedCharacter?.engineType ?: EngineType.LIVE2D).name
                             )
                             prefs.savePreset(newPreset)
                             userPresets = prefs.getPresets()
@@ -1941,27 +1951,41 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     )
                 }
 
-                if (!isFullscreen) {
-                    Live2DWebView(
-                        modelJsonPath = currentSkelPath,
-                        scale = currentScale,
-                        offsetX = currentOffsetX,
-                        offsetY = currentOffsetY,
-                        isPointerTrackingEnabled = isPointerTrackingEnabled,
-                        doubleTapTrigger = doubleTapTrigger,
-                        cornerRadiusPx = with(density) { 28.dp.toPx() },
-                        isAnimating = false,
-                        onModelLoaded = { loadedUrl ->
-                            val expected = Live2DUrlHelper.convertToAssetUrl(context, currentSkelPath)
-                            if (loadedUrl.isEmpty() || loadedUrl == expected) {
-                                isModelLoading = false
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .zIndex(1f)
-                    )
-                }
+                val isSpineModel = selectedCharacter?.engineType == EngineType.SPINE ||
+                    currentSkelPath.endsWith(".skel", ignoreCase = true) ||
+                    SpineModelHelper.isSpineFile(currentSkelPath)
+                val isCardActive = !isFullscreen
+
+                Live2DWebView(
+                    modelJsonPath = if (!isSpineModel) currentSkelPath else "",
+                    scale = currentScale,
+                    offsetX = currentOffsetX,
+                    offsetY = currentOffsetY,
+                    isPointerTrackingEnabled = isPointerTrackingEnabled,
+                    doubleTapTrigger = doubleTapTrigger,
+                    cornerRadiusPx = with(density) { 28.dp.toPx() },
+                    isAnimating = false,
+                    isActive = isCardActive && !isSpineModel,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(if (!isSpineModel) 2f else 1f)
+                )
+
+                SpineWebView(
+                    modelPath = if (isSpineModel) currentSkelPath else "",
+                    atlasPath = if (isSpineModel) (selectedVariant?.spineAtlasPath ?: "") else "",
+                    scale = currentScale,
+                    offsetX = currentOffsetX,
+                    offsetY = currentOffsetY,
+                    isPointerTrackingEnabled = isPointerTrackingEnabled,
+                    doubleTapTrigger = doubleTapTrigger,
+                    cornerRadiusPx = with(density) { 28.dp.toPx() },
+                    isAnimating = false,
+                    isActive = isCardActive && isSpineModel,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(if (isSpineModel) 2f else 1f)
+                )
 
                 if (clockPosition == WaifuPreferences.CLOCK_POS_FRONT) {
                     DigitalClockOverlay(
@@ -1976,26 +2000,8 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                         clockOffsetXPx = clockOffsetX,
                         clockOffsetYPx = clockOffsetY,
                         onPositionDrag = onClockDrag,
-                        modifier = Modifier.zIndex(2f)
+                        modifier = Modifier.zIndex(3f)
                     )
-                }
-
-                TopLevelAnimatedVisibility(
-                    visible = isModelLoading && !isFullscreen,
-                    enter = fadeIn(tween(180, easing = LinearOutSlowInEasing)),
-                    exit = fadeOut(tween(250, easing = FastOutLinearInEasing)),
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .zIndex(3f)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color(0xFF08132B)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        NothingLoadingIndicator()
-                    }
                 }
 
                 // Boutons d'Aperçu Carte (Plein Écran & Sauvegarder)
@@ -3438,45 +3444,40 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     )
                 }
 
-                if (isFullscreen) {
-                    Live2DWebView(
-                        modelJsonPath = currentSkelPath,
-                        scale = currentScale,
-                        offsetX = currentOffsetX,
-                        offsetY = currentOffsetY,
-                        isPointerTrackingEnabled = isPointerTrackingEnabled,
-                        doubleTapTrigger = doubleTapTrigger,
-                        cornerRadiusPx = 0f,
-                        isAnimating = false,
-                        onModelLoaded = { loadedUrl ->
-                            val expected = Live2DUrlHelper.convertToAssetUrl(context, currentSkelPath)
-                            if (loadedUrl.isEmpty() || loadedUrl == expected) {
-                                isModelLoading = false
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .zIndex(1f)
-                    )
-                }
+                val isSpineModel = selectedCharacter?.engineType == EngineType.SPINE ||
+                    currentSkelPath.endsWith(".skel", ignoreCase = true) ||
+                    SpineModelHelper.isSpineFile(currentSkelPath)
 
-                TopLevelAnimatedVisibility(
-                    visible = isModelLoading,
-                    enter = fadeIn(tween(180, easing = LinearOutSlowInEasing)),
-                    exit = fadeOut(tween(250, easing = FastOutLinearInEasing)),
+                Live2DWebView(
+                    modelJsonPath = if (!isSpineModel) currentSkelPath else "",
+                    scale = currentScale,
+                    offsetX = currentOffsetX,
+                    offsetY = currentOffsetY,
+                    isPointerTrackingEnabled = isPointerTrackingEnabled,
+                    doubleTapTrigger = doubleTapTrigger,
+                    cornerRadiusPx = 0f,
+                    isAnimating = false,
+                    isActive = isFullscreen && !isSpineModel,
                     modifier = Modifier
                         .fillMaxSize()
-                        .zIndex(3f)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color(0xFF08132B).copy(alpha = 0.65f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        NothingLoadingIndicator()
-                    }
-                }
+                        .zIndex(if (!isSpineModel) 2f else 1f)
+                )
+
+                SpineWebView(
+                    modelPath = if (isSpineModel) currentSkelPath else "",
+                    atlasPath = if (isSpineModel) (selectedVariant?.spineAtlasPath ?: "") else "",
+                    scale = currentScale,
+                    offsetX = currentOffsetX,
+                    offsetY = currentOffsetY,
+                    isPointerTrackingEnabled = isPointerTrackingEnabled,
+                    doubleTapTrigger = doubleTapTrigger,
+                    cornerRadiusPx = 0f,
+                    isAnimating = false,
+                    isActive = isFullscreen && isSpineModel,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(if (isSpineModel) 2f else 1f)
+                )
 
                 if (clockPosition == WaifuPreferences.CLOCK_POS_FRONT) {
                     DigitalClockOverlay(
@@ -3953,8 +3954,9 @@ fun IdeTreeViewNode(
                     color = if (isSelected) Color.White.copy(alpha = 0.25f) else Color(0xFFD2E3F5),
                     modifier = Modifier.padding(end = 6.dp)
                 ) {
+                    val badgeLabel = if (node.characterItem?.engineType == EngineType.SPINE) "[SPINE]" else "[LIVE2D]"
                     Text(
-                        text = "[PERSONNAGE]",
+                        text = badgeLabel,
                         fontSize = 8.sp,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,

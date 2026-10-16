@@ -52,6 +52,20 @@
                 android:resource="@xml/wallpaper" />
         </service>
 
+        <!-- Service Fond d'Écran Exclusif SPINE (Pixi Spine Multi-Version) -->
+        <service
+            android:name=".service.WaifuSpineWallpaperService"
+            android:exported="true"
+            android:label="WaifuEngine - Spine"
+            android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.wallpaper"
+                android:resource="@xml/wallpaper" />
+        </service>
+
     </application>
 
 </manifest>
