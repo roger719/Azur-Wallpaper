@@ -71,8 +71,7 @@ private fun ModelActionButtons(
     strings: AppStrings,
     onPreview: () -> Unit,
     onApply: () -> Unit,
-    onDownload: () -> Unit,
-    onDelete: () -> Unit
+    onDownload: () -> Unit
 ) {
     Row(
         modifier = modifier.height(38.dp),
@@ -130,7 +129,7 @@ private fun ModelActionButtons(
                 shape = RoundedCornerShape(10.dp),
                 color = nothingBlack,
                 modifier = Modifier
-                    .weight(1.1f)
+                    .weight(1.25f)
                     .fillMaxHeight()
                     .clickable { onApply() }
             ) {
@@ -145,26 +144,6 @@ private fun ModelActionButtons(
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                         maxLines = 1
-                    )
-                }
-            }
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = Color(0xFFFFE5E5),
-                border = BorderStroke(1.dp, Color(0xFFFFB3B3)),
-                modifier = Modifier
-                    .width(28.dp)
-                    .fillMaxHeight()
-                    .clickable { onDelete() }
-            ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    Text(
-                        text = "🗑",
-                        fontSize = 11.sp,
-                        color = accentRed
                     )
                 }
             }
@@ -1004,27 +983,31 @@ fun WorkshopDialog(
                                             border = BorderStroke(1.dp, nothingBorder),
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
-                                            Row(
+                                            Column(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
                                                     .padding(8.dp),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
+                                                verticalArrangement = Arrangement.spacedBy(4.dp)
                                             ) {
-                                                // GAUCHE : ENCADRÉ (NOM + TYPE FICHIER) + (SÉRIE • POIDS)
-                                                Column(
-                                                    modifier = Modifier.weight(1f),
-                                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                                // LIGNE PRINCIPALE : CASE DU NOM ET BOUTONS ALIGNÉS ENSEMBLE
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
                                                 ) {
-                                                    // ENCADRÉ DU HAUT : NOM + BADGE TYPE
+                                                    // CASE DU NOM DU PERSONNAGE
                                                     Surface(
                                                         shape = RoundedCornerShape(8.dp),
                                                         color = nothingSurface,
                                                         border = BorderStroke(1.dp, nothingBorder),
-                                                        modifier = Modifier.fillMaxWidth()
+                                                        modifier = Modifier
+                                                            .weight(1f)
+                                                            .height(38.dp)
                                                     ) {
                                                         Row(
-                                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                                            modifier = Modifier
+                                                                .fillMaxSize()
+                                                                .padding(horizontal = 8.dp),
                                                             verticalAlignment = Alignment.CenterVertically,
                                                             horizontalArrangement = Arrangement.SpaceBetween
                                                         ) {
@@ -1056,49 +1039,46 @@ fun WorkshopDialog(
                                                         }
                                                     }
 
-                                                    // DU BAS : SÉRIE • POIDS
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                                        modifier = Modifier.padding(start = 2.dp)
-                                                    ) {
-                                                        Text(
-                                                            text = group.game,
-                                                            fontSize = 9.sp,
-                                                            fontFamily = FontFamily.Monospace,
-                                                            fontWeight = FontWeight.Medium,
-                                                            color = nothingTextSecondary
-                                                        )
-                                                        Text(
-                                                            text = "•",
-                                                            fontSize = 9.sp,
-                                                            color = nothingBorder
-                                                        )
-                                                        Text(
-                                                            text = WorkshopManager.formatSize(singleModel.totalSize),
-                                                            fontSize = 9.sp,
-                                                            fontFamily = FontFamily.Monospace,
-                                                            color = nothingTextSecondary
-                                                        )
-                                                    }
+                                                    // BOUTONS D'ACTION (APERÇU ET TÉLÉCHARGER / APPLIQUER)
+                                                    ModelActionButtons(
+                                                        modifier = Modifier.width(156.dp),
+                                                        isInstalled = isInstalled,
+                                                        isDownloading = isDownloading,
+                                                        downloadProgress = downloadProgress,
+                                                        isPreviewing = isPreviewing,
+                                                        previewProgress = previewDownloadProgress,
+                                                        strings = strings,
+                                                        onPreview = { previewModel(singleModel) },
+                                                        onApply = { applyModel(singleModel) },
+                                                        onDownload = { downloadModel(singleModel) }
+                                                    )
                                                 }
 
-                                                Spacer(modifier = Modifier.width(8.dp))
-
-                                                // DROITE : BOUTONS APERÇU ET TÉLÉCHARGER (OU APPLIQUER)
-                                                ModelActionButtons(
-                                                    modifier = Modifier.width(156.dp),
-                                                    isInstalled = isInstalled,
-                                                    isDownloading = isDownloading,
-                                                    downloadProgress = downloadProgress,
-                                                    isPreviewing = isPreviewing,
-                                                    previewProgress = previewDownloadProgress,
-                                                    strings = strings,
-                                                    onPreview = { previewModel(singleModel) },
-                                                    onApply = { applyModel(singleModel) },
-                                                    onDownload = { downloadModel(singleModel) },
-                                                    onDelete = { deleteModel(singleModel) }
-                                                )
+                                                // LIGNE SECONDAIRE DU BAS : SÉRIE • POIDS
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                    modifier = Modifier.padding(start = 2.dp)
+                                                ) {
+                                                    Text(
+                                                        text = group.game,
+                                                        fontSize = 9.sp,
+                                                        fontFamily = FontFamily.Monospace,
+                                                        fontWeight = FontWeight.Medium,
+                                                        color = nothingTextSecondary
+                                                    )
+                                                    Text(
+                                                        text = "•",
+                                                        fontSize = 9.sp,
+                                                        color = nothingBorder
+                                                    )
+                                                    Text(
+                                                        text = WorkshopManager.formatSize(singleModel.totalSize),
+                                                        fontSize = 9.sp,
+                                                        fontFamily = FontFamily.Monospace,
+                                                        color = nothingTextSecondary
+                                                    )
+                                                }
                                             }
                                         }
                                     } else {
@@ -1113,27 +1093,31 @@ fun WorkshopDialog(
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Column(modifier = Modifier.fillMaxWidth()) {
-                                                Row(
+                                                Column(
                                                     modifier = Modifier
                                                         .fillMaxWidth()
                                                         .padding(8.dp),
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    verticalAlignment = Alignment.CenterVertically
+                                                    verticalArrangement = Arrangement.spacedBy(4.dp)
                                                 ) {
-                                                    // GAUCHE : ENCADRÉ (NOM + NBR DE SKIN + TYPE FICHIER) + (SÉRIE)
-                                                    Column(
-                                                        modifier = Modifier.weight(1f),
-                                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                                    // LIGNE PRINCIPALE : CASE DU NOM ET BOUTON "VOIR ↓" ALIGNÉS ENSEMBLE
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
                                                     ) {
                                                         // ENCADRÉ DU HAUT : NOM + NBR DE SKINS + BADGE TYPE
                                                         Surface(
                                                             shape = RoundedCornerShape(8.dp),
                                                             color = nothingSurface,
                                                             border = BorderStroke(1.dp, nothingBorder),
-                                                            modifier = Modifier.fillMaxWidth()
+                                                            modifier = Modifier
+                                                                .weight(1f)
+                                                                .height(38.dp)
                                                         ) {
                                                             Row(
-                                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                                                modifier = Modifier
+                                                                    .fillMaxSize()
+                                                                    .padding(horizontal = 8.dp),
                                                                 verticalAlignment = Alignment.CenterVertically,
                                                                 horizontalArrangement = Arrangement.SpaceBetween
                                                             ) {
@@ -1184,70 +1168,68 @@ fun WorkshopDialog(
                                                             }
                                                         }
 
-                                                        // DU BAS : SÉRIE • TAILLE (ET NOMBRE INSTALLÉ)
-                                                        Row(
-                                                            verticalAlignment = Alignment.CenterVertically,
-                                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                                            modifier = Modifier.padding(start = 2.dp)
+                                                        // DROITE : BOUTON "VOIR ↓" OU "REPLIER ↑" (ALIGNÉ AVEC LA CASE DU NOM)
+                                                        Surface(
+                                                            shape = RoundedCornerShape(10.dp),
+                                                            color = nothingSurface,
+                                                            border = BorderStroke(1.dp, nothingBorder),
+                                                            modifier = Modifier
+                                                                .width(156.dp)
+                                                                .height(38.dp)
+                                                                .clickable {
+                                                                    expandedGroupKeys = if (expandedGroupKeys.contains(group.id)) {
+                                                                        expandedGroupKeys - group.id
+                                                                    } else {
+                                                                        expandedGroupKeys + group.id
+                                                                    }
+                                                                }
                                                         ) {
-                                                            Text(
-                                                                text = group.game,
-                                                                fontSize = 9.sp,
-                                                                fontFamily = FontFamily.Monospace,
-                                                                fontWeight = FontWeight.Medium,
-                                                                color = nothingTextSecondary
-                                                            )
-                                                            Text(
-                                                                text = "•",
-                                                                fontSize = 9.sp,
-                                                                color = nothingBorder
-                                                            )
-                                                            Text(
-                                                                text = WorkshopManager.formatSize(group.totalSize),
-                                                                fontSize = 9.sp,
-                                                                fontFamily = FontFamily.Monospace,
-                                                                color = nothingTextSecondary
-                                                            )
-                                                            if (installedCount > 0) {
+                                                            Row(
+                                                                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                                                                horizontalArrangement = Arrangement.Center,
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
                                                                 Text(
-                                                                    text = "• $installedCount/${group.models.size} ${strings.installedStatus}",
-                                                                    fontSize = 9.sp,
+                                                                    text = if (isExpanded) strings.collapseUp else strings.viewDown,
+                                                                    fontSize = 11.sp,
+                                                                    fontFamily = FontFamily.Monospace,
                                                                     fontWeight = FontWeight.Bold,
-                                                                    color = accentGreen
+                                                                    color = nothingTextPrimary
                                                                 )
                                                             }
                                                         }
                                                     }
 
-                                                    Spacer(modifier = Modifier.width(8.dp))
-
-                                                    // DROITE : BOUTON "VOIR ↓" OU "REPLIER ↑" (EXACTEMENT SELON LE SCHÉMA)
-                                                    Surface(
-                                                        shape = RoundedCornerShape(10.dp),
-                                                        color = nothingSurface,
-                                                        border = BorderStroke(1.dp, nothingBorder),
-                                                        modifier = Modifier
-                                                            .width(156.dp)
-                                                            .height(38.dp)
-                                                            .clickable {
-                                                                expandedGroupKeys = if (expandedGroupKeys.contains(group.id)) {
-                                                                    expandedGroupKeys - group.id
-                                                                } else {
-                                                                    expandedGroupKeys + group.id
-                                                                }
-                                                            }
+                                                    // DU BAS : SÉRIE • TAILLE (ET NOMBRE INSTALLÉ)
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                        modifier = Modifier.padding(start = 2.dp)
                                                     ) {
-                                                        Row(
-                                                            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
-                                                            horizontalArrangement = Arrangement.Center,
-                                                            verticalAlignment = Alignment.CenterVertically
-                                                        ) {
+                                                        Text(
+                                                            text = group.game,
+                                                            fontSize = 9.sp,
+                                                            fontFamily = FontFamily.Monospace,
+                                                            fontWeight = FontWeight.Medium,
+                                                            color = nothingTextSecondary
+                                                        )
+                                                        Text(
+                                                            text = "•",
+                                                            fontSize = 9.sp,
+                                                            color = nothingBorder
+                                                        )
+                                                        Text(
+                                                            text = WorkshopManager.formatSize(group.totalSize),
+                                                            fontSize = 9.sp,
+                                                            fontFamily = FontFamily.Monospace,
+                                                            color = nothingTextSecondary
+                                                        )
+                                                        if (installedCount > 0) {
                                                             Text(
-                                                                text = if (isExpanded) strings.collapseUp else strings.viewDown,
-                                                                fontSize = 11.sp,
-                                                                fontFamily = FontFamily.Monospace,
+                                                                text = "• $installedCount/${group.models.size} ${strings.installedStatus}",
+                                                                fontSize = 9.sp,
                                                                 fontWeight = FontWeight.Bold,
-                                                                color = nothingTextPrimary
+                                                                color = accentGreen
                                                             )
                                                         }
                                                     }
@@ -1268,23 +1250,28 @@ fun WorkshopDialog(
                                                             val isSkinPreviewing = previewingModelId == model.id
 
                                                             // CHAQUE SKIN DÉPLIÉ ADOPTE LE SCHÉMA DU BAS
-                                                            Row(
+                                                            Column(
                                                                 modifier = Modifier.fillMaxWidth(),
-                                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                                verticalAlignment = Alignment.CenterVertically
+                                                                verticalArrangement = Arrangement.spacedBy(3.dp)
                                                             ) {
-                                                                Column(
-                                                                    modifier = Modifier.weight(1f),
-                                                                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                                                                // LIGNE PRINCIPALE : CASE DU NOM DU SKIN ET BOUTONS ALIGNÉS ENSEMBLE
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                                    verticalAlignment = Alignment.CenterVertically
                                                                 ) {
                                                                     Surface(
                                                                         shape = RoundedCornerShape(6.dp),
                                                                         color = nothingSurface,
                                                                         border = BorderStroke(1.dp, nothingBorder),
-                                                                        modifier = Modifier.fillMaxWidth()
+                                                                        modifier = Modifier
+                                                                            .weight(1f)
+                                                                            .height(38.dp)
                                                                     ) {
                                                                         Row(
-                                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                                                            modifier = Modifier
+                                                                                .fillMaxSize()
+                                                                                .padding(horizontal = 6.dp),
                                                                             verticalAlignment = Alignment.CenterVertically,
                                                                             horizontalArrangement = Arrangement.SpaceBetween
                                                                         ) {
@@ -1315,46 +1302,45 @@ fun WorkshopDialog(
                                                                             }
                                                                         }
                                                                     }
-                                                                    Row(
-                                                                        verticalAlignment = Alignment.CenterVertically,
-                                                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                                                        modifier = Modifier.padding(start = 2.dp)
-                                                                    ) {
-                                                                        Text(
-                                                                            text = model.game,
-                                                                            fontSize = 8.sp,
-                                                                            fontFamily = FontFamily.Monospace,
-                                                                            color = nothingTextSecondary
-                                                                        )
-                                                                        Text(
-                                                                            text = "•",
-                                                                            fontSize = 8.sp,
-                                                                            color = nothingBorder
-                                                                        )
-                                                                        Text(
-                                                                            text = WorkshopManager.formatSize(model.totalSize),
-                                                                            fontSize = 8.sp,
-                                                                            fontFamily = FontFamily.Monospace,
-                                                                            color = nothingTextSecondary
-                                                                        )
-                                                                    }
+
+                                                                    ModelActionButtons(
+                                                                        modifier = Modifier.width(156.dp),
+                                                                        isInstalled = isSkinInstalled,
+                                                                        isDownloading = isSkinDownloading,
+                                                                        downloadProgress = downloadProgress,
+                                                                        isPreviewing = isSkinPreviewing,
+                                                                        previewProgress = previewDownloadProgress,
+                                                                        strings = strings,
+                                                                        onPreview = { previewModel(model) },
+                                                                        onApply = { applyModel(model) },
+                                                                        onDownload = { downloadModel(model) }
+                                                                    )
                                                                 }
 
-                                                                Spacer(modifier = Modifier.width(8.dp))
-
-                                                                ModelActionButtons(
-                                                                    modifier = Modifier.width(156.dp),
-                                                                    isInstalled = isSkinInstalled,
-                                                                    isDownloading = isSkinDownloading,
-                                                                    downloadProgress = downloadProgress,
-                                                                    isPreviewing = isSkinPreviewing,
-                                                                    previewProgress = previewDownloadProgress,
-                                                                    strings = strings,
-                                                                    onPreview = { previewModel(model) },
-                                                                    onApply = { applyModel(model) },
-                                                                    onDownload = { downloadModel(model) },
-                                                                    onDelete = { deleteModel(model) }
-                                                                )
+                                                                // LIGNE SECONDAIRE DU BAS : JEU • TAILLE
+                                                                Row(
+                                                                    verticalAlignment = Alignment.CenterVertically,
+                                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                                    modifier = Modifier.padding(start = 2.dp)
+                                                                ) {
+                                                                    Text(
+                                                                        text = model.game,
+                                                                        fontSize = 8.sp,
+                                                                        fontFamily = FontFamily.Monospace,
+                                                                        color = nothingTextSecondary
+                                                                    )
+                                                                    Text(
+                                                                        text = "•",
+                                                                        fontSize = 8.sp,
+                                                                        color = nothingBorder
+                                                                    )
+                                                                    Text(
+                                                                        text = WorkshopManager.formatSize(model.totalSize),
+                                                                        fontSize = 8.sp,
+                                                                        fontFamily = FontFamily.Monospace,
+                                                                        color = nothingTextSecondary
+                                                                    )
+                                                                }
                                                             }
                                                         }
                                                     }
