@@ -162,7 +162,7 @@ fun SettingsDialog(
                                         color = if (isFr) Color.White else nothingTextPrimary
                                     )
                                     Text(
-                                        text = "Français (Par défaut)",
+                                        text = if (strings.isEn) "French (Default)" else "Français (Par défaut)",
                                         fontSize = 9.sp,
                                         color = if (isFr) Color(0xFFD0D0D5) else nothingTextSecondary
                                     )
@@ -175,7 +175,7 @@ fun SettingsDialog(
                                     color = Color(0xFF2A2A30)
                                 ) {
                                     Text(
-                                        text = "ACTIF",
+                                        text = if (strings.isEn) "ACTIVE" else "ACTIF",
                                         fontSize = 8.sp,
                                         fontFamily = FontFamily.Monospace,
                                         fontWeight = FontWeight.Bold,
@@ -224,7 +224,7 @@ fun SettingsDialog(
                                         color = if (isEn) Color.White else nothingTextPrimary
                                     )
                                     Text(
-                                        text = "English (International)",
+                                        text = if (strings.isEn) "English (International)" else "Anglais (International)",
                                         fontSize = 9.sp,
                                         color = if (isEn) Color(0xFFD0D0D5) else nothingTextSecondary
                                     )
@@ -237,7 +237,7 @@ fun SettingsDialog(
                                     color = Color(0xFF2A2A30)
                                 ) {
                                     Text(
-                                        text = "ACTIVE",
+                                        text = if (strings.isEn) "ACTIVE" else "ACTIF",
                                         fontSize = 8.sp,
                                         fontFamily = FontFamily.Monospace,
                                         fontWeight = FontWeight.Bold,

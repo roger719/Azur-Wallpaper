@@ -38,6 +38,7 @@ import com.example.waifuengine.spine.SpineWebView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.Locale
 
 private val nothingBg = Color(0xFFDCE8F6)
@@ -261,7 +262,7 @@ private fun WorkshopPreviewDialog(
                             }
                         }
                         Text(
-                            text = if (isInstalled) "Modèle installé • Aperçu interactif" else "Aperçu temporaire (non téléchargé)",
+                            text = if (isInstalled) strings.installedPreviewSubtitle else strings.tempPreviewSubtitle,
                             fontSize = 10.sp,
                             color = if (isInstalled) accentGreen else nothingTextSecondary
                         )
@@ -298,7 +299,8 @@ private fun WorkshopPreviewDialog(
                 ) {
                     val variant = characterItem.variants.firstOrNull()
                     if (variant != null) {
-                        if (characterItem.engineType == EngineType.SPINE) {
+                        val isSpine = model.engine == EngineType.SPINE || characterItem.engineType == EngineType.SPINE
+                        if (isSpine) {
                             SpineWebView(
                                 modelPath = variant.modelJsonPath,
                                 atlasPath = variant.spineAtlasPath,
@@ -316,7 +318,7 @@ private fun WorkshopPreviewDialog(
                         }
                     } else {
                         Text(
-                            text = "Format de modèle non reconnu.",
+                            text = strings.unrecognizedModelFormat,
                             fontSize = 12.sp,
                             color = nothingTextSecondary
                         )
@@ -434,14 +436,18 @@ fun WorkshopDialog(
 
     fun applyModel(model: WorkshopModel) {
         val allChars = CharacterRepository.loadAllCustomCharacters(context)
+        val cleanModelName = model.name.replace(Regex("[^a-zA-Z0-9_\\-\\s]"), "_")
         val found = allChars.firstOrNull { it.name.equals(model.name, ignoreCase = true) }
             ?: allChars.firstOrNull { it.folderPath.contains(model.name, ignoreCase = true) }
+            ?: allChars.firstOrNull { it.folderPath.contains(cleanModelName, ignoreCase = true) }
+            ?: allChars.firstOrNull { File(it.folderPath).name.equals(model.name, ignoreCase = true) }
+            ?: allChars.firstOrNull { File(it.folderPath).name.equals(cleanModelName, ignoreCase = true) }
         if (found != null) {
             onModelApplied(found)
             dismissWorkshop()
-            Toast.makeText(context, "${model.name} appliqué en fond d'écran !", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, strings.modelAppliedToast(model.name), Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(context, "Modèle introuvable dans les fichiers locaux", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, strings.modelNotFoundLocally, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -460,44 +466,55 @@ fun WorkshopDialog(
             if (success) {
                 localInstalledVersion++
                 onTreeUpdated()
-                Toast.makeText(context, "${model.name} téléchargé avec succès !", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, strings.modelDownloadedToast(model.name), Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(context, "Échec du téléchargement de ${model.name}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, strings.modelDownloadFailedToast(model.name), Toast.LENGTH_SHORT).show()
             }
         }
     }
 
     fun previewModel(model: WorkshopModel) {
         val isInstalled = WorkshopManager.isModelInstalledFast(model, installedIdentifiers)
+        val allChars = CharacterRepository.loadAllCustomCharacters(context)
+        val cleanModelName = model.name.replace(Regex("[^a-zA-Z0-9_\\-\\s]"), "_")
+        val found = allChars.firstOrNull { it.name.equals(model.name, ignoreCase = true) }
+            ?: allChars.firstOrNull { it.folderPath.contains(model.name, ignoreCase = true) }
+            ?: allChars.firstOrNull { it.folderPath.contains(cleanModelName, ignoreCase = true) }
+            ?: allChars.firstOrNull { File(it.folderPath).name.equals(model.name, ignoreCase = true) }
+            ?: allChars.firstOrNull { File(it.folderPath).name.equals(cleanModelName, ignoreCase = true) }
+
+        if (found != null) {
+            previewCharacterItem = found
+            previewModel = model
+            isPreviewInstalled = true
+            return
+        }
+
         if (isInstalled) {
-            val allChars = CharacterRepository.loadAllCustomCharacters(context)
-            val found = allChars.firstOrNull { it.name.equals(model.name, ignoreCase = true) }
-                ?: allChars.firstOrNull { it.folderPath.contains(model.name, ignoreCase = true) }
-            if (found != null) {
-                previewCharacterItem = found
+            Toast.makeText(context, strings.modelNotFoundLocally, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        coroutineScope.launch {
+            previewingModelId = model.id
+            previewDownloadProgress = 0f
+            val charItem = WorkshopManager.downloadModelForPreview(
+                context = context,
+                model = model,
+                repoUrl = prefs.workshopRepoUrl,
+                token = prefs.workshopGithubToken,
+                onProgress = { previewDownloadProgress = it }
+            )
+            previewingModelId = null
+            if (charItem != null) {
+                previewCharacterItem = charItem
                 previewModel = model
-                isPreviewInstalled = true
+                isPreviewInstalled = false
             } else {
-                Toast.makeText(context, "Modèle introuvable dans les fichiers locaux", Toast.LENGTH_SHORT).show()
-            }
-        } else {
-            coroutineScope.launch {
-                previewingModelId = model.id
-                previewDownloadProgress = 0f
-                val charItem = WorkshopManager.downloadModelForPreview(
-                    context = context,
-                    model = model,
-                    repoUrl = prefs.workshopRepoUrl,
-                    token = prefs.workshopGithubToken,
-                    onProgress = { previewDownloadProgress = it }
-                )
-                previewingModelId = null
-                if (charItem != null) {
-                    previewCharacterItem = charItem
-                    previewModel = model
-                    isPreviewInstalled = false
+                if (model.engine == EngineType.LIVE2D && model.files.any { it.path.contains("Live2Ddatabase/AzureLane") }) {
+                    Toast.makeText(context, strings.unityBundleNotSupported, Toast.LENGTH_LONG).show()
                 } else {
-                    Toast.makeText(context, "Échec du téléchargement de l'aperçu", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, strings.previewDownloadFailed, Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -508,7 +525,7 @@ fun WorkshopDialog(
         if (deleted) {
             localInstalledVersion++
             onTreeUpdated()
-            Toast.makeText(context, "${model.name} supprimé du téléphone.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, strings.modelDeletedToast(model.name), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -575,14 +592,14 @@ fun WorkshopDialog(
                 ) {
                     Column {
                         Text(
-                            text = "WORKSHOP",
+                            text = strings.workshopTitle,
                             fontSize = 16.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
                             color = nothingTextPrimary
                         )
                         Text(
-                            text = if (isConfigMode) "Configuration du dépôt" else "Bibliothèque Spine & Live2D distante",
+                            text = if (isConfigMode) strings.repoConfig else strings.workshopSubtitle,
                             fontSize = 10.sp,
                             color = nothingTextSecondary
                         )
@@ -615,7 +632,7 @@ fun WorkshopDialog(
                                 modifier = Modifier.clickable { isConfigMode = true }
                             ) {
                                 Text(
-                                    text = "Dépôt",
+                                    text = if (strings.isEn) "Repo" else "Dépôt",
                                     fontSize = 10.sp,
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.Bold,
@@ -662,14 +679,14 @@ fun WorkshopDialog(
                                 verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 Text(
-                                    text = "Lier votre base de données GitHub",
+                                    text = strings.linkGithubDatabase,
                                     fontSize = 13.sp,
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.Bold,
                                     color = nothingTextPrimary
                                 )
                                 Text(
-                                    text = "Renseignez l'URL de votre dépôt GitHub. L'application découvrira et classera automatiquement chaque personnage selon vos sous-dossiers par jeu (Arknights, NIKKE, Brown Dust 2, Azure Lane...).",
+                                    text = strings.githubExplanation,
                                     fontSize = 11.sp,
                                     color = nothingTextSecondary
                                 )
@@ -677,7 +694,7 @@ fun WorkshopDialog(
                                 OutlinedTextField(
                                     value = repoUrlInput,
                                     onValueChange = { repoUrlInput = it },
-                                    label = { Text("URL DU DÉPÔT GITHUB", fontSize = 10.sp, fontFamily = FontFamily.Monospace) },
+                                    label = { Text(strings.repoUrlLabel, fontSize = 10.sp, fontFamily = FontFamily.Monospace) },
                                     placeholder = { Text("https://github.com/roger719/Azur-Database", fontSize = 11.sp) },
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth(),
@@ -693,8 +710,8 @@ fun WorkshopDialog(
                                 OutlinedTextField(
                                     value = tokenInput,
                                     onValueChange = { tokenInput = it },
-                                    label = { Text("CLÉ D'ACCÈS / TOKEN PERSONNEL (PAT)", fontSize = 10.sp, fontFamily = FontFamily.Monospace) },
-                                    placeholder = { Text("ghp_... (Requis pour dépôt privé)", fontSize = 11.sp) },
+                                    label = { Text(strings.accessKeyLabel, fontSize = 10.sp, fontFamily = FontFamily.Monospace) },
+                                    placeholder = { Text(strings.tokenPlaceholder, fontSize = 11.sp) },
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = RoundedCornerShape(12.dp),
@@ -712,7 +729,7 @@ fun WorkshopDialog(
                                 ) {
                                     val isTokenPresent = tokenInput.trim().isNotBlank()
                                     Text(
-                                        text = if (isTokenPresent) "● Clé d'accès renseignée" else "○ Dépôt public uniquement (aucune clé)",
+                                        text = if (isTokenPresent) strings.tokenSaved else strings.tokenPublicOnly,
                                         fontSize = 10.sp,
                                         fontFamily = FontFamily.Monospace,
                                         fontWeight = FontWeight.Bold,
@@ -721,7 +738,7 @@ fun WorkshopDialog(
                                 }
 
                                 Text(
-                                    text = "Astuce : Pour un dépôt privé GitHub, utilisez un Token avec accès 'repo' ou 'contents:read'.",
+                                    text = strings.tokenTip,
                                     fontSize = 10.sp,
                                     color = nothingTextSecondary
                                 )
@@ -738,7 +755,7 @@ fun WorkshopDialog(
                                     onClick = { isConfigMode = false },
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
-                                    Text("Annuler", fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
+                                    Text(strings.cancel, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
                             }
@@ -752,16 +769,16 @@ fun WorkshopDialog(
                                         prefs.workshopGithubToken = cleanTok
                                         isConfigMode = false
                                         loadModels()
-                                        Toast.makeText(context, "Dépôt et clé d'accès enregistrés !", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, strings.repoSavedToast, Toast.LENGTH_SHORT).show()
                                     } else {
-                                        Toast.makeText(context, "Veuillez renseigner une URL valide", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, if (strings.isEn) "Please enter a valid URL" else "Veuillez renseigner une URL valide", Toast.LENGTH_SHORT).show()
                                     }
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
                                 shape = RoundedCornerShape(14.dp)
                             ) {
                                 Text(
-                                    text = "ENREGISTRER & CHARGER",
+                                    text = strings.saveAndLoad,
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
@@ -784,14 +801,14 @@ fun WorkshopDialog(
                             ) {
                                 CircularProgressIndicator(color = nothingBlack)
                                 Text(
-                                    text = "Exploration du dépôt GitHub...",
+                                    text = strings.exploringRepo,
                                     fontSize = 12.sp,
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.Bold,
                                     color = nothingTextPrimary
                                 )
                                 Text(
-                                    text = "Classement des modèles par jeu en cours",
+                                    text = strings.sortingModels,
                                     fontSize = 10.sp,
                                     color = nothingTextSecondary
                                 )
@@ -810,7 +827,7 @@ fun WorkshopDialog(
                                 modifier = Modifier.padding(16.dp)
                             ) {
                                 Text(
-                                    text = "Échec du chargement",
+                                    text = strings.loadFailed,
                                     fontSize = 13.sp,
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.Bold,
@@ -828,14 +845,14 @@ fun WorkshopDialog(
                                         colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
                                         shape = RoundedCornerShape(12.dp)
                                     ) {
-                                        Text("RÉESSAYER", color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                                        Text(strings.retry, color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                                     }
                                     OutlinedButton(
                                         onClick = { isConfigMode = true },
                                         shape = RoundedCornerShape(12.dp),
                                         border = BorderStroke(1.dp, nothingBorder)
                                     ) {
-                                        Text("DÉPÔT & CLÉ D'ACCÈS", color = nothingTextPrimary, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                                        Text(strings.repoAndAccessKey, color = nothingTextPrimary, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                                     }
                                 }
                             }
@@ -845,7 +862,7 @@ fun WorkshopDialog(
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
-                            placeholder = { Text("recher", fontSize = 11.sp, color = nothingTextSecondary) },
+                            placeholder = { Text(strings.searchPlaceholder, fontSize = 11.sp, color = nothingTextSecondary) },
                             trailingIcon = {
                                 if (searchQuery.isNotEmpty()) {
                                     Text(
@@ -887,14 +904,15 @@ fun WorkshopDialog(
                         }
 
                         // FILTRES PAR JEU
-                        val games = remember(characterGroups) {
-                            listOf("Tous") + characterGroups.map { it.game }.distinct().sorted()
+                        val allFilterText = strings.allFilter
+                        val games = remember(characterGroups, allFilterText) {
+                            listOf(allFilterText) + characterGroups.map { it.game }.distinct().sorted()
                         }
 
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             items(games) { game ->
-                                val isSelected = selectedGameFilter == game
-                                val count = if (game == "Tous") characterGroups.size else characterGroups.count { it.game == game }
+                                val isSelected = selectedGameFilter == game || (game == allFilterText && (selectedGameFilter == "Tous" || selectedGameFilter == "All" || selectedGameFilter == allFilterText))
+                                val count = if (game == allFilterText) characterGroups.size else characterGroups.count { it.game == game }
                                 Surface(
                                     shape = RoundedCornerShape(10.dp),
                                     color = if (isSelected) nothingBlack else nothingBg,
@@ -914,9 +932,10 @@ fun WorkshopDialog(
                         }
 
                         // FILTRAGE ET CHARGEMENT PROGRESSIF (VIRTUALISATION ET FLUIDITÉ OPTIMISÉE)
-                        val filteredGroups = remember(characterGroups, selectedGameFilter, searchQuery) {
+                        val filteredGroups = remember(characterGroups, selectedGameFilter, searchQuery, allFilterText) {
                             characterGroups.filter { group ->
-                                val matchGame = selectedGameFilter == "Tous" || group.game.equals(selectedGameFilter, ignoreCase = true)
+                                val isAll = selectedGameFilter == allFilterText || selectedGameFilter == "Tous" || selectedGameFilter == "All"
+                                val matchGame = isAll || group.game.equals(selectedGameFilter, ignoreCase = true)
                                 val matchQuery = searchQuery.isBlank() ||
                                         group.characterName.contains(searchQuery, ignoreCase = true) ||
                                         group.game.contains(searchQuery, ignoreCase = true) ||
@@ -955,7 +974,7 @@ fun WorkshopDialog(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = "Aucun personnage correspondant trouvé.",
+                                    text = strings.noCharacterFound,
                                     fontSize = 11.sp,
                                     fontFamily = FontFamily.Monospace,
                                     color = nothingTextSecondary
@@ -1174,7 +1193,7 @@ fun WorkshopDialog(
                                                             color = nothingSurface,
                                                             border = BorderStroke(1.dp, nothingBorder),
                                                             modifier = Modifier
-                                                                .width(156.dp)
+                                                                .width(78.dp)
                                                                 .height(38.dp)
                                                                 .clickable {
                                                                     expandedGroupKeys = if (expandedGroupKeys.contains(group.id)) {
@@ -1185,16 +1204,17 @@ fun WorkshopDialog(
                                                                 }
                                                         ) {
                                                             Row(
-                                                                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                                                                modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
                                                                 horizontalArrangement = Arrangement.Center,
                                                                 verticalAlignment = Alignment.CenterVertically
                                                             ) {
                                                                 Text(
                                                                     text = if (isExpanded) strings.collapseUp else strings.viewDown,
-                                                                    fontSize = 11.sp,
+                                                                    fontSize = 10.sp,
                                                                     fontFamily = FontFamily.Monospace,
                                                                     fontWeight = FontWeight.Bold,
-                                                                    color = nothingTextPrimary
+                                                                    color = nothingTextPrimary,
+                                                                    maxLines = 1
                                                                 )
                                                             }
                                                         }
@@ -1406,9 +1426,9 @@ fun WorkshopDialog(
                     localInstalledVersion++
                     onTreeUpdated()
                     isPreviewInstalled = true
-                    Toast.makeText(context, "${currentModel.name} installé avec succès !", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, strings.modelInstalledToast(currentModel.name), Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(context, "Échec de l'installation", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, strings.installFailedToast, Toast.LENGTH_SHORT).show()
                 }
             },
             onDismiss = {

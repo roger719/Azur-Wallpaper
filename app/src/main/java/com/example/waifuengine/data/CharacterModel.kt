@@ -61,11 +61,29 @@ object CharacterRepository {
         }
         if (hasDirectLive2D) return true
 
-        // Cas d'un dossier avec display_name.txt contenant exactement un sous-dossier de modèle
+        // Cas d'un dossier avec display_name.txt contenant un sous-dossier de modèle
         if (File(dir, "display_name.txt").exists()) {
             val subDirs = files.filter { it.isDirectory && !it.name.startsWith(".") }
-            if (subDirs.size == 1 && isLive2DDirectory(subDirs.first())) {
+            if (subDirs.any { isLive2DDirectory(it) }) {
                 return true
+            }
+        }
+
+        // Détection récursive pour dossiers avec structure imbriquée
+        if (!isSpineDirectory(dir)) {
+            val hasNestedLive2D = dir.walkTopDown().maxDepth(3).any {
+                it.isFile && (
+                    it.name.endsWith(".moc3", ignoreCase = true) ||
+                    it.name.endsWith(".model3.json", ignoreCase = true) ||
+                    it.name.endsWith(".model.json", ignoreCase = true) ||
+                    it.name.endsWith(".moc", ignoreCase = true)
+                )
+            }
+            if (hasNestedLive2D) {
+                val mocCount = dir.walkTopDown().maxDepth(3).count {
+                    it.isFile && (it.name.endsWith(".moc3", ignoreCase = true) || it.name.endsWith(".model3.json", ignoreCase = true))
+                }
+                if (mocCount in 1..4) return true
             }
         }
 
@@ -202,7 +220,14 @@ object CharacterRepository {
             try {
                 val synthJson = File(mocFile.parentFile, "${mocFile.nameWithoutExtension}.model3.json")
                 val relMoc = mocFile.name
-                val relTextures = textureFiles.map { File(it).name }
+                val parentPath = mocFile.parentFile?.absolutePath ?: ""
+                val relTextures = textureFiles.map { texPath ->
+                    if (parentPath.isNotEmpty() && texPath.startsWith(parentPath)) {
+                        texPath.removePrefix(parentPath).replace("\\", "/").trimStart('/')
+                    } else {
+                        File(texPath).name
+                    }
+                }
                 val jsonObj = JSONObject().apply {
                     put("Version", 3)
                     put("FileReferences", JSONObject().apply {

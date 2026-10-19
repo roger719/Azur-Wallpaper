@@ -216,7 +216,8 @@ fun NothingLoadingIndicator(modifier: Modifier = Modifier) {
 fun RagebaitButton(
     isRagebaitEnabled: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    strings: AppStrings = AppStrings(WaifuPreferences(LocalContext.current).appLanguage)
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "RainbowTransition")
     val hueAnim by infiniteTransition.animateFloat(
@@ -257,8 +258,8 @@ fun RagebaitButton(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column {
-                Text("MODE RAGEBAIT", fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = Color(0xFF0D1B3E))
-                Text("Joue la musique en continu même en veille", fontSize = 10.sp, color = Color(0xFF2D4B75))
+                Text(strings.ragebaitMode, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = Color(0xFF0D1B3E))
+                Text(strings.playMusicContinuous, fontSize = 10.sp, color = Color(0xFF2D4B75))
             }
 
             Surface(
@@ -266,7 +267,7 @@ fun RagebaitButton(
                 color = if (isRagebaitEnabled) Color(0xFFD9383A) else Color(0xFFD2E3F5)
             ) {
                 Text(
-                    text = if (isRagebaitEnabled) "ACTIF (PIN)" else "INACTIF",
+                    text = if (isRagebaitEnabled) strings.ragebaitActive else strings.ragebaitInactive,
                     fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
@@ -414,20 +415,37 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
     var presetNameInput by remember { mutableStateOf("") }
     var presetToDelete by remember { mutableStateOf<PresetItem?>(null) }
 
-    val daysOfWeek = remember {
-        listOf(
-            "2" to "Lun",
-            "3" to "Mar",
-            "4" to "Mer",
-            "5" to "Jeu",
-            "6" to "Ven",
-            "7" to "Sam",
-            "1" to "Dim"
-        )
+    var currentAppLanguage by remember { mutableStateOf(prefs.appLanguage) }
+    val strings = remember(currentAppLanguage) { AppStrings(currentAppLanguage) }
+
+    val daysOfWeek = remember(strings.isEn) {
+        if (strings.isEn) {
+            listOf(
+                "2" to "Mon",
+                "3" to "Tue",
+                "4" to "Wed",
+                "5" to "Thu",
+                "6" to "Fri",
+                "7" to "Sat",
+                "1" to "Sun"
+            )
+        } else {
+            listOf(
+                "2" to "Lun",
+                "3" to "Mar",
+                "4" to "Mer",
+                "5" to "Jeu",
+                "6" to "Ven",
+                "7" to "Sam",
+                "1" to "Dim"
+            )
+        }
     }
 
     var selectedDayKey by remember { mutableStateOf("2") }
-    var selectedDayLabel by remember { mutableStateOf("Lun") }
+    var selectedDayLabel by remember(selectedDayKey, strings.isEn) {
+        mutableStateOf(daysOfWeek.firstOrNull { it.first == selectedDayKey }?.second ?: if (strings.isEn) "Mon" else "Lun")
+    }
     var currentDaySchedule by remember(selectedDayKey) {
         mutableStateOf(prefs.getDaySchedule(selectedDayKey, selectedDayLabel))
     }
@@ -567,7 +585,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                 prefs.ragebaitLockoutTime = 0L
                 isRagebaitEnabled = false
                 ragebaitLockoutTime = 0L
-                Toast.makeText(context, "Mode Ragebait désactivé automatiquement !", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, strings.ragebaitAutoDisabledToast, Toast.LENGTH_LONG).show()
                 break
             }
             delay(1000L)
@@ -576,8 +594,6 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
     // Dialog States
     var showSettingsDialog by remember { mutableStateOf(false) }
-    var currentAppLanguage by remember { mutableStateOf(prefs.appLanguage) }
-    val strings = remember(currentAppLanguage) { AppStrings(currentAppLanguage) }
 
     var showFilesDialog by remember { mutableStateOf(false) }
     var showWorkshopDialog by remember { mutableStateOf(false) }
@@ -652,9 +668,9 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                 prefs.bgOffsetX = 0f
                 prefs.bgOffsetY = 0f
                 bgType = WaifuPreferences.TYPE_IMAGE
-                Toast.makeText(context, "Image de fond appliquée !", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, strings.bgImageAppliedToast, Toast.LENGTH_SHORT).show()
             } catch (_: Exception) {
-                Toast.makeText(context, "Erreur lors du chargement de l'image", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, strings.bgImageErrorToast, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -675,9 +691,9 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                 prefs.scheduleFallbackType = WaifuPreferences.TYPE_IMAGE
                 fallbackImagePath = destFile.absolutePath
                 fallbackType = WaifuPreferences.TYPE_IMAGE
-                Toast.makeText(context, "Image de pause enregistrée !", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, strings.pauseImageSavedToast, Toast.LENGTH_SHORT).show()
             } catch (_: Exception) {
-                Toast.makeText(context, "Erreur lors du chargement de l'image de pause", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, strings.pauseImageErrorToast, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -702,9 +718,9 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                 prefs.bgOffsetX = 0f
                 prefs.bgOffsetY = 0f
                 bgType = WaifuPreferences.TYPE_VIDEO
-                Toast.makeText(context, "Vidéo de fond appliquée !", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, if (strings.isEn) "Background video applied!" else "Vidéo de fond appliquée !", Toast.LENGTH_SHORT).show()
             } catch (_: Exception) {
-                Toast.makeText(context, "Erreur lors du chargement de la vidéo", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, if (strings.isEn) "Error loading video" else "Erreur lors du chargement de la vidéo", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -734,19 +750,19 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     prefs.bgImagePath = ""
                     prefs.bgType = WaifuPreferences.TYPE_VIDEO
                     bgType = WaifuPreferences.TYPE_VIDEO
-                    Toast.makeText(context, "Vidéo de fond appliquée !", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, if (strings.isEn) "Background video applied!" else "Vidéo de fond appliquée !", Toast.LENGTH_SHORT).show()
                 } else {
                     prefs.bgImagePath = destFile.absolutePath
                     prefs.bgVideoPath = ""
                     prefs.bgType = WaifuPreferences.TYPE_IMAGE
                     bgType = WaifuPreferences.TYPE_IMAGE
-                    Toast.makeText(context, "Image de fond appliquée !", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, strings.bgImageAppliedToast, Toast.LENGTH_SHORT).show()
                 }
                 prefs.bgScale = 1.0f
                 prefs.bgOffsetX = 0f
                 prefs.bgOffsetY = 0f
             } catch (_: Exception) {
-                Toast.makeText(context, "Erreur lors du chargement du fichier", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, if (strings.isEn) "Error loading file" else "Erreur lors du chargement du fichier", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -767,9 +783,9 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                 prefs.isMusicEnabled = true
                 musicPath = destFile.absolutePath
                 isMusicEnabled = true
-                Toast.makeText(context, "Musique chargée !", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, if (strings.isEn) "Music loaded!" else "Musique chargée !", Toast.LENGTH_SHORT).show()
             } catch (_: Exception) {
-                Toast.makeText(context, "Erreur lors du chargement de la musique", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, if (strings.isEn) "Error loading music" else "Erreur lors du chargement de la musique", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -812,10 +828,10 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     }
                     context.startActivity(intent)
                 } catch (_: Exception) {
-                    Toast.makeText(context, "Erreur lors de l'ouverture du fond d'écran", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, strings.wallpaperOpenErrorToast, Toast.LENGTH_LONG).show()
                 }
             } else {
-                Toast.makeText(context, "Fond d'écran actualisé : ${charItem.name}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, strings.wallpaperUpdatedToast(charItem.name), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -853,7 +869,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
             shape = RoundedCornerShape(24.dp),
             title = {
                 Text(
-                    text = "SAUVEGARDER UN PRÉSET",
+                    text = strings.savePresetTitle,
                     fontSize = 13.sp,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
@@ -930,7 +946,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                             )
                             prefs.savePreset(newPreset)
                             userPresets = prefs.getPresets()
-                            Toast.makeText(context, "Préset '$cleanName' sauvegardé !", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, strings.presetSavedToast(cleanName), Toast.LENGTH_SHORT).show()
                             showSavePresetDialog = false
                             presetNameInput = ""
                         }
@@ -938,12 +954,12 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
                     shape = RoundedCornerShape(16.dp)
                 ) {
-                    Text("ENREGISTRER", color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    Text(strings.saveUpper, color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showSavePresetDialog = false }) {
-                    Text("ANNULER", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
+                    Text(strings.cancelUpper, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
                 }
             }
         )
@@ -956,26 +972,26 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
             onDismissRequest = { showDeletePresetDialog = false },
             containerColor = nothingSurface,
             shape = RoundedCornerShape(24.dp),
-            title = { Text("SUPPRIMER LE PRÉSET", fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary) },
-            text = { Text("Voulez-vous supprimer le préset '${targetPreset.name}' ?", fontSize = 11.sp, color = nothingTextSecondary) },
+            title = { Text(strings.deletePresetTitle, fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary) },
+            text = { Text(strings.deletePresetConfirm(targetPreset.name), fontSize = 11.sp, color = nothingTextSecondary) },
             confirmButton = {
                 Button(
                     onClick = {
                         prefs.deletePreset(targetPreset.id)
                         userPresets = prefs.getPresets()
-                        Toast.makeText(context, "Préset supprimé !", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, strings.presetDeletedToast, Toast.LENGTH_SHORT).show()
                         showDeletePresetDialog = false
                         presetToDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD9383A)),
                     shape = RoundedCornerShape(16.dp)
                 ) {
-                    Text("SUPPRIMER", color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    Text(strings.deleteUpper, color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeletePresetDialog = false }) {
-                    Text("ANNULER", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
+                    Text(strings.cancelUpper, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
                 }
             }
         )
@@ -989,7 +1005,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
             shape = RoundedCornerShape(24.dp),
             title = {
                 Text(
-                    text = "AJUSTER LE PERSONNAGE",
+                    text = strings.adjustCharacterTitle,
                     fontSize = 13.sp,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
@@ -1008,7 +1024,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("ZOOM", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextSecondary)
+                            Text(strings.zoom, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextSecondary)
                             Text("${(currentScale * 100).toInt()}%", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
                         }
                         Slider(
@@ -1030,7 +1046,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("POSITION HORIZONTALE (X)", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextSecondary)
+                            Text(strings.horizontalPosition, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextSecondary)
                             Text("${currentOffsetX.toInt()} px", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
                         }
                         Slider(
@@ -1052,7 +1068,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("POSITION VERTICALE (Y)", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextSecondary)
+                            Text(strings.verticalPosition, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextSecondary)
                             Text("${currentOffsetY.toInt()} px", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
                         }
                         Slider(
@@ -1075,7 +1091,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Zone Tactile personnalisée", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                        Text(strings.customTouchZoneTitle, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
                         Switch(
                             checked = isTouchZoneCustom,
                             onCheckedChange = { enabled ->
@@ -1093,7 +1109,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Position Horizontale (X)", fontSize = 10.sp, color = nothingTextSecondary)
+                                Text(strings.horizontalPosition, fontSize = 10.sp, color = nothingTextSecondary)
                                 Text("${(touchZoneLeft * 100).toInt()}%", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                             Slider(
@@ -1113,7 +1129,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Position Verticale (Y)", fontSize = 10.sp, color = nothingTextSecondary)
+                                Text(strings.verticalPosition, fontSize = 10.sp, color = nothingTextSecondary)
                                 Text("${(touchZoneTop * 100).toInt()}%", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                             Slider(
@@ -1133,7 +1149,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Largeur Zone Tactile", fontSize = 10.sp, color = nothingTextSecondary)
+                                Text(strings.touchZoneWidthLabel, fontSize = 10.sp, color = nothingTextSecondary)
                                 Text("${(touchZoneWidth * 100).toInt()}%", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                             Slider(
@@ -1153,7 +1169,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Hauteur Zone Tactile", fontSize = 10.sp, color = nothingTextSecondary)
+                                Text(strings.touchZoneHeightLabel, fontSize = 10.sp, color = nothingTextSecondary)
                                 Text("${(touchZoneHeight * 100).toInt()}%", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                             Slider(
@@ -1180,7 +1196,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                         colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
                         shape = RoundedCornerShape(16.dp)
                     ) {
-                        Text("OK", color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        Text(strings.ok, color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                     }
 
                     TextButton(
@@ -1190,7 +1206,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                             currentOffsetY = 0f
                         }
                     ) {
-                        Text("RÉINITIALISER", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = Color(0xFFD9383A))
+                        Text(strings.reset, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = Color(0xFFD9383A))
                     }
                 }
             },
@@ -1204,10 +1220,10 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
             onDismissRequest = { showRagebaitEnableDialog = false },
             containerColor = nothingSurface,
             shape = RoundedCornerShape(24.dp),
-            title = { Text("MODE RAGEBAIT", fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary) },
+            title = { Text(strings.ragebaitMode, fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary) },
             text = {
                 Column {
-                    Text("Définissez un code PIN secret pour protéger ce mode :", fontSize = 11.sp, color = nothingTextSecondary)
+                    Text(strings.ragebaitPinPrompt, fontSize = 11.sp, color = nothingTextSecondary)
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = pinInputText,
@@ -1225,22 +1241,22 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                             prefs.ragebaitPin = pinInputText.trim()
                             prefs.isRagebaitEnabled = true
                             isRagebaitEnabled = true
-                            Toast.makeText(context, "Mode Ragebait activé !", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, strings.ragebaitEnabledToast, Toast.LENGTH_LONG).show()
                             showRagebaitEnableDialog = false
                             pinInputText = ""
                         } else {
-                            Toast.makeText(context, "Veuillez entrer un code PIN valide", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, strings.ragebaitInvalidPinToast, Toast.LENGTH_SHORT).show()
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
                     shape = RoundedCornerShape(16.dp)
                 ) {
-                    Text("ACTIVIER", color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    Text(strings.activateUpper, color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showRagebaitEnableDialog = false }) {
-                    Text("ANNULER", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
+                    Text(strings.cancelUpper, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
                 }
             }
         )
@@ -1255,21 +1271,21 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
             onDismissRequest = { showRagebaitDisableDialog = false },
             containerColor = nothingSurface,
             shape = RoundedCornerShape(24.dp),
-            title = { Text("DÉSACTIVER RAGEBAIT", fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary) },
+            title = { Text(strings.disableRagebait, fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary) },
             text = {
                 Column {
                     if (isLocked) {
                         val remainingMin = (remainingMs / 1000) / 60
                         val remainingSec = (remainingMs / 1000) % 60
                         Text(
-                            text = String.format("Accès bloqué. Désactivation automatique dans %02d:%02d min.", remainingMin, remainingSec),
+                            text = strings.accessLockedText(remainingMin, remainingSec),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFFD9383A)
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                     }
-                    Text("Saisissez votre code PIN secret :", fontSize = 11.sp, color = nothingTextSecondary)
+                    Text(strings.ragebaitEnterPin, fontSize = 11.sp, color = nothingTextSecondary)
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = pinInputText,
@@ -1289,14 +1305,14 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                             prefs.ragebaitLockoutTime = 0L
                             isRagebaitEnabled = false
                             ragebaitLockoutTime = 0L
-                            Toast.makeText(context, "Mode Ragebait désactivé !", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, strings.ragebaitDisabledToast, Toast.LENGTH_SHORT).show()
                             showRagebaitDisableDialog = false
                             pinInputText = ""
                         } else {
                             val lockoutEnd = System.currentTimeMillis() + 15 * 60 * 1000L
                             prefs.ragebaitLockoutTime = lockoutEnd
                             ragebaitLockoutTime = lockoutEnd
-                            Toast.makeText(context, "Code PIN incorrect ! Désactivation automatique bloquée pendant 15 minutes.", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, strings.ragebaitWrongPinToast, Toast.LENGTH_LONG).show()
                             showRagebaitDisableDialog = false
                             pinInputText = ""
                         }
@@ -1304,12 +1320,12 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
                     shape = RoundedCornerShape(16.dp)
                 ) {
-                    Text("VALIDER", color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    Text(strings.validateUpper, color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showRagebaitDisableDialog = false }) {
-                    Text("ANNULER", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
+                    Text(strings.cancelUpper, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
                 }
             }
         )
@@ -1394,7 +1410,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
             onDismissRequest = { showCreateFolderDialog = false },
             containerColor = nothingSurface,
             shape = RoundedCornerShape(24.dp),
-            title = { Text("NOUVEAU DOSSIER", fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary) },
+            title = { Text(strings.newFolderTitle, fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary) },
             text = {
                 OutlinedTextField(
                     value = folderNameInput,
@@ -1411,7 +1427,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                             val success = CharacterRepository.createFolder(targetFolderForNewSub, folderNameInput)
                             if (success) {
                                 refreshFileManager()
-                                Toast.makeText(context, "Dossier créé !", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, strings.folderCreatedToast, Toast.LENGTH_SHORT).show()
                             }
                         }
                         showCreateFolderDialog = false
@@ -1420,12 +1436,12 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
                     shape = RoundedCornerShape(16.dp)
                 ) {
-                    Text("CRÉER", color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    Text(strings.create, color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showCreateFolderDialog = false }) {
-                    Text("ANNULER", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
+                    Text(strings.cancelUpper, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
                 }
             }
         )
@@ -1437,7 +1453,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
             onDismissRequest = { showImportDialog = false },
             containerColor = nothingSurface,
             shape = RoundedCornerShape(24.dp),
-            title = { Text("NOMMER LE PERSONNAGE", fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary) },
+            title = { Text(strings.nameCharacterTitle, fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary) },
             text = {
                 OutlinedTextField(
                     value = renameInputText,
@@ -1464,13 +1480,13 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                     )
                                     if (success) {
                                         refreshFileManager()
-                                        Toast.makeText(context, "Personnage importé et affiché !", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, strings.charImportedToast, Toast.LENGTH_SHORT).show()
                                     } else {
-                                        Toast.makeText(context, "ZIP invalide : Modèle Live2D (.moc3) introuvable", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, strings.invalidZipToast, Toast.LENGTH_LONG).show()
                                     }
                                 }
                             } catch (_: Exception) {
-                                Toast.makeText(context, "Erreur d'importation", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, strings.importErrorToast, Toast.LENGTH_SHORT).show()
                             }
                         }
                         showImportDialog = false
@@ -1478,12 +1494,12 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
                     shape = RoundedCornerShape(16.dp)
                 ) {
-                    Text("IMPORTER", color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    Text(strings.importUpper, color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showImportDialog = false }) {
-                    Text("ANNULER", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
+                    Text(strings.cancelUpper, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
                 }
             }
         )
@@ -1496,7 +1512,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
             onDismissRequest = { showRenameDialog = false },
             containerColor = nothingSurface,
             shape = RoundedCornerShape(24.dp),
-            title = { Text("RENOMMER", fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary) },
+            title = { Text(strings.renameTitle, fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary) },
             text = {
                 OutlinedTextField(
                     value = renameInputText,
@@ -1513,19 +1529,19 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                         if (renameInputText.isNotBlank()) {
                             CharacterRepository.renameNode(file, renameInputText)
                             refreshFileManager()
-                            Toast.makeText(context, "Nom mis à jour !", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, strings.nameUpdatedToast, Toast.LENGTH_SHORT).show()
                         }
                         showRenameDialog = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
                     shape = RoundedCornerShape(16.dp)
                 ) {
-                    Text("ENREGISTRER", color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    Text(strings.saveUpper, color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showRenameDialog = false }) {
-                    Text("ANNULER", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
+                    Text(strings.cancelUpper, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
                 }
             }
         )
@@ -1538,26 +1554,26 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
             onDismissRequest = { showDeleteDialog = false },
             containerColor = nothingSurface,
             shape = RoundedCornerShape(24.dp),
-            title = { Text("SUPPRIMER", fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary) },
-            text = { Text("Voulez-vous supprimer définitivement ${targetNode.name} ?", fontSize = 11.sp, color = nothingTextSecondary) },
+            title = { Text(strings.deleteUpper, fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary) },
+            text = { Text(strings.deleteConfirm(targetNode.name), fontSize = 11.sp, color = nothingTextSecondary) },
             confirmButton = {
                 Button(
                     onClick = {
                         val file = File(targetNode.absolutePath)
                         CharacterRepository.deleteNode(file)
                         refreshFileManager()
-                        Toast.makeText(context, "Supprimé !", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, strings.deletedToast, Toast.LENGTH_SHORT).show()
                         showDeleteDialog = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD9383A)),
                     shape = RoundedCornerShape(16.dp)
                 ) {
-                    Text("SUPPRIMER", color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    Text(strings.deleteUpper, color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("ANNULER", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
+                    Text(strings.cancelUpper, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
                 }
             }
         )
@@ -1572,10 +1588,10 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
             onDismissRequest = { showMoveDialog = false },
             containerColor = nothingSurface,
             shape = RoundedCornerShape(24.dp),
-            title = { Text("DÉPLACER ${targetNode.name}", fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary) },
+            title = { Text(strings.moveTitle(targetNode.name), fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary) },
             text = {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    Text("Choisir le dossier de destination :", fontSize = 11.sp, color = nothingTextSecondary)
+                    Text(strings.chooseDestFolder, fontSize = 11.sp, color = nothingTextSecondary)
                     Spacer(modifier = Modifier.height(10.dp))
 
                     LazyColumn(
@@ -1586,14 +1602,14 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     ) {
                         items(allAvailableFolders) { folder ->
                             val isRoot = folder.absolutePath == rootDir.absolutePath
-                            val folderLabel = if (isRoot) "[RACINE]" else "Dossier: ${folder.relativeTo(rootDir).path}"
+                            val folderLabel = if (isRoot) strings.rootBadge else strings.folderPrefix(folder.relativeTo(rootDir).path)
 
                             Button(
                                 onClick = {
                                     CharacterRepository.moveNode(File(targetNode.absolutePath), folder)
                                     refreshFileManager()
                                     showMoveDialog = false
-                                    Toast.makeText(context, "Déplacé vers $folderLabel !", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, strings.movedToFolderToast(folderLabel), Toast.LENGTH_SHORT).show()
                                 },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = if (isRoot) nothingBlack else Color(0xFFD2E3F5),
@@ -1611,7 +1627,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showMoveDialog = false }) {
-                    Text("ANNULER", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
+                    Text(strings.cancelUpper, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
                 }
             }
         )
@@ -1623,7 +1639,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
             onDismissRequest = { showBgMediaPickerDialog = false },
             containerColor = nothingSurface,
             shape = RoundedCornerShape(24.dp),
-            title = { Text("FOND IMAGE OU VIDÉO", fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary) },
+            title = { Text(strings.bgMediaTitle, fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary) },
             text = {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -1638,7 +1654,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Choisir une Image", color = Color.White, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        Text(strings.chooseImage, color = Color.White, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                     }
 
                     Button(
@@ -1650,7 +1666,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Choisir une Vidéo", color = Color.White, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        Text(strings.chooseVideo, color = Color.White, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                     }
 
                     if (bgType != WaifuPreferences.TYPE_NONE) {
@@ -1660,13 +1676,13 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                 bgType = WaifuPreferences.TYPE_NONE
                                 prefs.bgType = WaifuPreferences.TYPE_NONE
                                 showBgMediaPickerDialog = false
-                                Toast.makeText(context, "Fond réinitialisé !", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, strings.bgResetToast, Toast.LENGTH_SHORT).show()
                             },
                             shape = RoundedCornerShape(14.dp),
                             border = BorderStroke(1.dp, nothingBorder),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Effacer le fond médias", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = nothingTextPrimary, fontWeight = FontWeight.Bold)
+                            Text(strings.clearBgMedia, fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = nothingTextPrimary, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -1674,7 +1690,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showBgMediaPickerDialog = false }) {
-                    Text("ANNULER", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
+                    Text(strings.cancelUpper, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
                 }
             }
         )
@@ -1701,7 +1717,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "CHANGER LA POLICE",
+                            text = strings.changeFontTitle,
                             fontSize = 13.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
@@ -1862,7 +1878,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                             Text("✕", fontSize = 18.sp, color = nothingTextPrimary, fontWeight = FontWeight.Bold)
                         }
                         Text(
-                            text = "PERSONNALISER LES COULEURS",
+                            text = strings.customizeColorsTitle,
                             fontSize = 13.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
@@ -1874,7 +1890,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
                     // 1. TEINTE (Hue Rainbow)
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("TEINTE", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextSecondary)
+                        Text(strings.hue, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextSecondary)
 
                         val rainbowBrush = remember {
                             Brush.horizontalGradient(
@@ -1908,7 +1924,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
                     // 2. SATURATION
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("SATURATION", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextSecondary)
+                        Text(strings.saturation, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextSecondary)
 
                         val satBrush = remember(hsvHue, hsvVal) {
                             val cMin = Color(AndroidColor.HSVToColor(floatArrayOf(hsvHue, 0f, hsvVal)))
@@ -1939,7 +1955,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
                     // 3. CLARTÉ
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("CLARTÉ", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextSecondary)
+                        Text(strings.brightness, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextSecondary)
 
                         val valBrush = remember(hsvHue, hsvSat) {
                             val cMin = Color.Black
@@ -2004,7 +2020,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                             colors = ButtonDefaults.buttonColors(containerColor = nothingBlack, contentColor = Color.White),
                             shape = RoundedCornerShape(16.dp)
                         ) {
-                            Text("APPLIQUER", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                            Text(strings.applyUpper, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -2111,6 +2127,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                         dateFormat = dateFormat,
                         clockOffsetXPx = clockOffsetX,
                         clockOffsetYPx = clockOffsetY,
+                        isEn = strings.isEn,
                         onPositionDrag = onClockDrag,
                         modifier = Modifier.zIndex(0f)
                     )
@@ -2175,6 +2192,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                         dateFormat = dateFormat,
                         clockOffsetXPx = clockOffsetX,
                         clockOffsetYPx = clockOffsetY,
+                        isEn = strings.isEn,
                         onPositionDrag = onClockDrag,
                         modifier = Modifier.zIndex(3f)
                     )
@@ -2223,7 +2241,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                             border = BorderStroke(1.dp, nothingBorder)
                         ) {
                             Text(
-                                text = "sauvegarder",
+                                text = strings.saveSmall,
                                 color = Color(0xFF0D1B3E),
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace,
@@ -2519,7 +2537,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                             verticalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
                                             Text(
-                                                text = "Présets :",
+                                                text = strings.presetsLabel,
                                                 fontSize = 12.sp,
                                                 fontFamily = FontFamily.Monospace,
                                                 fontWeight = FontWeight.Bold,
@@ -2528,7 +2546,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
                                             if (userPresets.isEmpty()) {
                                                 Text(
-                                                    text = "Aucun préset enregistré. Cliquez sur 'Sauvegarder' en haut de l'aperçu !",
+                                                    text = strings.noPresetHint,
                                                     fontSize = 10.sp,
                                                     color = nothingTextSecondary
                                                 )
@@ -2695,7 +2713,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                                         prefs.spineAtlasPath = ""
                                                                     }
 
-                                                                    Toast.makeText(context, "Préset '${preset.name}' appliqué !", Toast.LENGTH_SHORT).show()
+                                                                    Toast.makeText(context, strings.presetAppliedToast(preset.name), Toast.LENGTH_SHORT).show()
                                                                 },
                                                                 onLongClick = {
                                                                     presetToDelete = preset
@@ -2808,7 +2826,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                 verticalArrangement = Arrangement.spacedBy(10.dp)
                                             ) {
                                                 Text(
-                                                    text = "ANIMATIONS & INTERACTION",
+                                                    text = strings.animationsAndInteraction,
                                                     fontSize = 12.sp,
                                                     fontFamily = FontFamily.Monospace,
                                                     fontWeight = FontWeight.Bold,
@@ -2822,8 +2840,8 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
                                                     Column(modifier = Modifier.weight(1f)) {
-                                                        Text("Suivi du doigt (Tête/Regard)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
-                                                        Text("Le personnage tourne la tête vers le doigt", fontSize = 10.sp, color = nothingTextSecondary)
+                                                        Text(strings.fingerTracking, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                                        Text(strings.fingerTrackingSubtitle, fontSize = 10.sp, color = nothingTextSecondary)
                                                     }
                                                     Switch(
                                                         checked = isPointerTrackingEnabled,
@@ -2838,8 +2856,8 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
                                                 // 2. SÉLECTION DES ANIMATIONS DE SORTIE DE VEILLE (DÉVERROUILLAGE)
                                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                    Text("Animation de sortie de veille (Déverrouillage) :", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
-                                                    Text("Sélectionnez une ou plusieurs animations (choix aléatoire lors du déverrouillage)", fontSize = 10.sp, color = nothingTextSecondary)
+                                                    Text(strings.wakeupAnimationLabel, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                                    Text(strings.wakeupAnimationSubtitle, fontSize = 10.sp, color = nothingTextSecondary)
 
                                                     val selectedWakeupList = remember(wakeupAnimation) {
                                                         wakeupAnimation.split(",").map { it.trim() }.filter { it.isNotEmpty() && !it.equals("NONE", ignoreCase = true) }.toSet()
@@ -2854,7 +2872,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                                     wakeupAnimation = "NONE"
                                                                     prefs.wakeupAnimation = "NONE"
                                                                 },
-                                                                label = { Text("Aucune (Désactivée)", fontSize = 11.sp, fontWeight = if (isWakeupNoneSelected) FontWeight.Bold else FontWeight.Normal) },
+                                                                label = { Text(strings.animationNone, fontSize = 11.sp, fontWeight = if (isWakeupNoneSelected) FontWeight.Bold else FontWeight.Normal) },
                                                                 shape = RoundedCornerShape(12.dp),
                                                                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = nothingBlack, selectedLabelColor = Color.White)
                                                             )
@@ -2895,8 +2913,8 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
                                                 // 3. SÉLECTION DES ANIMATIONS AU TOUCHER (TAP / CLIC)
                                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                    Text("Animation au toucher (Clic / Tap) :", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
-                                                    Text("Sélectionnez une ou plusieurs animations (choix aléatoire lors du toucher)", fontSize = 10.sp, color = nothingTextSecondary)
+                                                    Text(strings.clickAnimationLabel, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                                    Text(strings.clickAnimationSubtitle, fontSize = 10.sp, color = nothingTextSecondary)
 
                                                     val selectedClickList = remember(clickAnimation) {
                                                         clickAnimation.split(",").map { it.trim() }.filter { it.isNotEmpty() && !it.equals("NONE", ignoreCase = true) }.toSet()
@@ -2911,7 +2929,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                                     clickAnimation = "NONE"
                                                                     prefs.clickAnimation = "NONE"
                                                                 },
-                                                                label = { Text("Aucune (Désactivée)", fontSize = 11.sp, fontWeight = if (isClickNoneSelected) FontWeight.Bold else FontWeight.Normal) },
+                                                                label = { Text(strings.animationNone, fontSize = 11.sp, fontWeight = if (isClickNoneSelected) FontWeight.Bold else FontWeight.Normal) },
                                                                 shape = RoundedCornerShape(12.dp),
                                                                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = nothingBlack, selectedLabelColor = Color.White)
                                                             )
@@ -3015,7 +3033,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                         contentAlignment = Alignment.Center
                                                     ) {
                                                         Text(
-                                                            text = "Image / Vidéo",
+                                                            text = strings.imageOrVideo,
                                                             fontSize = 11.sp,
                                                             fontFamily = FontFamily.Monospace,
                                                             fontWeight = FontWeight.Bold,
@@ -3033,7 +3051,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                         bgType = WaifuPreferences.TYPE_COLOR
                                                         prefs.bgType = WaifuPreferences.TYPE_COLOR
                                                         prefs.bgColor = pickedColor.toArgb()
-                                                        Toast.makeText(context, "Couleur de fond appliquée !", Toast.LENGTH_SHORT).show()
+                                                        Toast.makeText(context, strings.bgAppliedToast, Toast.LENGTH_SHORT).show()
                                                     },
                                                     shape = RoundedCornerShape(20.dp),
                                                     color = if (isColorActive) nothingBlack else Color(0xFFEDF4FC),
@@ -3049,7 +3067,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                         contentAlignment = Alignment.Center
                                                     ) {
                                                         Text(
-                                                            text = "Appliquer Couleur",
+                                                            text = strings.applyColor,
                                                             fontSize = 11.sp,
                                                             fontFamily = FontFamily.Monospace,
                                                             fontWeight = FontWeight.Bold,
@@ -3067,7 +3085,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
-                                                Text("Couper le son de la vidéo", fontSize = 11.sp, color = nothingTextSecondary)
+                                                Text(strings.muteVideoSound, fontSize = 11.sp, color = nothingTextSecondary)
                                                 Switch(
                                                     checked = isVideoMuted,
                                                     onCheckedChange = {
@@ -3090,7 +3108,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text("Musique de Fond :", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                                Text(strings.bgMusicLabel, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     Button(
                                                         onClick = { musicPickerLauncher.launch("audio/*") },
@@ -3098,7 +3116,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                         shape = RoundedCornerShape(12.dp),
                                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                                     ) {
-                                                        Text("Choisir Audio", fontSize = 11.sp, color = Color.White)
+                                                        Text(strings.chooseAudio, fontSize = 11.sp, color = Color.White)
                                                     }
                                                     Spacer(modifier = Modifier.width(6.dp))
                                                     Switch(
@@ -3117,7 +3135,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                                 ) {
-                                                    Text("Volume : ${(musicVolume * 100).toInt()}%", fontSize = 11.sp, color = nothingTextSecondary)
+                                                    Text("${strings.volume} : ${(musicVolume * 100).toInt()}%", fontSize = 11.sp, color = nothingTextSecondary)
                                                     Slider(
                                                         value = musicVolume,
                                                         onValueChange = {
@@ -3150,7 +3168,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Text("Horloge numérique :", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                            Text(strings.digitalClockLabel, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
                                             Switch(
                                                 checked = isClockEnabled,
                                                 onCheckedChange = { enabled ->
@@ -3181,7 +3199,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                         verticalArrangement = Arrangement.SpaceEvenly
                                                     ) {
                                                         Text(
-                                                            text = "Police",
+                                                            text = strings.font,
                                                             fontSize = 12.sp,
                                                             fontFamily = FontFamily.Monospace,
                                                             fontWeight = FontWeight.Bold,
@@ -3226,7 +3244,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                         verticalArrangement = Arrangement.SpaceEvenly
                                                     ) {
                                                         Text(
-                                                            text = "Couleur",
+                                                            text = strings.color,
                                                             fontSize = 12.sp,
                                                             fontFamily = FontFamily.Monospace,
                                                             fontWeight = FontWeight.Bold,
@@ -3321,7 +3339,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
                                             HorizontalDivider(color = nothingBorder)
 
-                                            Text("Affichage de la date :", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                            Text(strings.dateDisplay, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
                                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                     FilterChip(
                                                         selected = !isDateEnabled,
@@ -3329,7 +3347,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                             isDateEnabled = false
                                                             prefs.isDateEnabled = false
                                                         },
-                                                        label = { Text("Masquée", fontSize = 11.sp) },
+                                                        label = { Text(strings.hidden, fontSize = 11.sp) },
                                                         shape = RoundedCornerShape(12.dp),
                                                         colors = FilterChipDefaults.filterChipColors(
                                                             selectedContainerColor = nothingBlack,
@@ -3345,7 +3363,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                             prefs.isDateEnabled = true
                                                             prefs.dateFormat = WaifuPreferences.DATE_FORMAT_SHORT
                                                         },
-                                                        label = { Text("Abrégé (12 oct.)", fontSize = 11.sp) },
+                                                        label = { Text(strings.dateShort, fontSize = 11.sp) },
                                                         shape = RoundedCornerShape(12.dp),
                                                         colors = FilterChipDefaults.filterChipColors(
                                                             selectedContainerColor = nothingBlack,
@@ -3361,7 +3379,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                             prefs.isDateEnabled = true
                                                             prefs.dateFormat = WaifuPreferences.DATE_FORMAT_FULL
                                                         },
-                                                        label = { Text("Toute lettre (12 octobre)", fontSize = 11.sp) },
+                                                        label = { Text(strings.dateFull, fontSize = 11.sp) },
                                                         shape = RoundedCornerShape(12.dp),
                                                         colors = FilterChipDefaults.filterChipColors(
                                                             selectedContainerColor = nothingBlack,
@@ -3377,7 +3395,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                     horizontalArrangement = Arrangement.SpaceBetween,
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
-                                                    Text("Format 24h (HH:mm)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                                    Text(strings.format24h, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
                                                     Switch(
                                                         checked = clockFormat24h,
                                                         onCheckedChange = {
@@ -3392,7 +3410,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                     horizontalArrangement = Arrangement.SpaceBetween,
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
-                                                    Text("Afficher les secondes", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                                    Text(strings.showSeconds, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
                                                     Switch(
                                                         checked = clockShowSeconds,
                                                         onCheckedChange = {
@@ -3404,7 +3422,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
                                                 HorizontalDivider(color = nothingBorder)
 
-                                                Text("Taille : ${clockSize.toInt()} sp", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                                Text("${strings.clockSize} : ${clockSize.toInt()} sp", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
                                                 Slider(
                                                     value = clockSize,
                                                     onValueChange = {
@@ -3434,7 +3452,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Text("Activer la planification globale", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                            Text(strings.enableSchedule, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
                                             Switch(
                                                 checked = isScheduleEnabled,
                                                 onCheckedChange = { enabled ->
@@ -3447,7 +3465,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                         if (isScheduleEnabled) {
                                             HorizontalDivider(color = nothingBorder)
 
-                                            Text("Sélectionner un jour à configurer :", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                            Text(strings.selectDayToConfigure, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
 
                                             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                 items(daysOfWeek) { (dayKey, dayLabel) ->
@@ -3492,7 +3510,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                         horizontalArrangement = Arrangement.SpaceBetween,
                                                         verticalAlignment = Alignment.CenterVertically
                                                     ) {
-                                                        Text("Pause le $selectedDayLabel", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                                        Text(strings.pauseOnDay(selectedDayLabel), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
                                                         Switch(
                                                             checked = currentDaySchedule.isEnabled,
                                                             onCheckedChange = { enabled ->
@@ -3513,7 +3531,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                             val startStr = String.format("%02d:%02d", currentDaySchedule.startHour, currentDaySchedule.startMinute)
                                                             val endStr = String.format("%02d:%02d", currentDaySchedule.endHour, currentDaySchedule.endMinute)
 
-                                                            Text("Plage : $startStr à $endStr", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                                            Text(strings.timeRange(startStr, endStr), fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
 
                                                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                                 Button(
@@ -3535,7 +3553,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                                     shape = RoundedCornerShape(12.dp),
                                                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                                                 ) {
-                                                                    Text("Début", fontSize = 10.sp, color = Color.White)
+                                                                    Text(strings.startTime, fontSize = 10.sp, color = Color.White)
                                                                 }
 
                                                                 Button(
@@ -3557,7 +3575,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                                     shape = RoundedCornerShape(12.dp),
                                                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                                                 ) {
-                                                                    Text("Fin", fontSize = 10.sp, color = Color.White)
+                                                                    Text(strings.endTime, fontSize = 10.sp, color = Color.White)
                                                                 }
                                                             }
                                                         }
@@ -3565,7 +3583,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                 }
                                             }
 
-                                            Text("Fond de remplacement pendant la pause :", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                            Text(strings.fallbackBackground, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
                                             Row(
                                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                                 verticalAlignment = Alignment.CenterVertically
@@ -3576,7 +3594,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                         fallbackType = WaifuPreferences.TYPE_COLOR
                                                         prefs.scheduleFallbackType = WaifuPreferences.TYPE_COLOR
                                                     },
-                                                    label = { Text("Noir Pur", fontSize = 11.sp) },
+                                                    label = { Text(strings.pureBlack, fontSize = 11.sp) },
                                                     shape = RoundedCornerShape(12.dp),
                                                     colors = FilterChipDefaults.filterChipColors(
                                                         selectedContainerColor = nothingBlack,
@@ -3590,7 +3608,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                         fallbackType = WaifuPreferences.TYPE_IMAGE
                                                         prefs.scheduleFallbackType = WaifuPreferences.TYPE_IMAGE
                                                     },
-                                                    label = { Text("Image de secours", fontSize = 11.sp) },
+                                                    label = { Text(strings.backupImage, fontSize = 11.sp) },
                                                     shape = RoundedCornerShape(12.dp),
                                                     colors = FilterChipDefaults.filterChipColors(
                                                         selectedContainerColor = nothingBlack,
@@ -3605,7 +3623,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                         shape = RoundedCornerShape(12.dp),
                                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                                     ) {
-                                                        Text("Choisir image", fontSize = 10.sp, color = Color.White)
+                                                        Text(strings.chooseImage, fontSize = 10.sp, color = Color.White)
                                                     }
                                                 }
                                             }
@@ -3614,6 +3632,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
                                             RagebaitButton(
                                                 isRagebaitEnabled = isRagebaitEnabled,
+                                                strings = strings,
                                                 onClick = {
                                                     if (isRagebaitEnabled) {
                                                         pinInputText = ""
@@ -3679,6 +3698,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                         dateFormat = dateFormat,
                         clockOffsetXPx = clockOffsetX,
                         clockOffsetYPx = clockOffsetY,
+                        isEn = strings.isEn,
                         onPositionDrag = onClockDrag,
                         modifier = Modifier.zIndex(0f)
                     )
@@ -3742,6 +3762,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                         dateFormat = dateFormat,
                         clockOffsetXPx = clockOffsetX,
                         clockOffsetYPx = clockOffsetY,
+                        isEn = strings.isEn,
                         onPositionDrag = onClockDrag,
                         modifier = Modifier.zIndex(2f)
                     )
@@ -3788,7 +3809,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                 }
                         ) {
                             Text(
-                                text = "ZONE TACTILE",
+                                text = strings.touchZone,
                                 fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold,
@@ -3876,7 +3897,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                             ),
                             shape = RoundedCornerShape(20.dp)
                         ) {
-                            Text("APPLIQUER", fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                            Text(strings.applyUpper, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -3920,9 +3941,9 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                 prefs.isTouchZoneCustom = nextState
                                 showTouchZoneEditor = nextState
                                 if (nextState) {
-                                    Toast.makeText(context, "Zone tactile activée ! Ajustez le carré rouge.", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, strings.touchZoneActiveToast, Toast.LENGTH_SHORT).show()
                                 } else {
-                                    Toast.makeText(context, "Zone tactile désactivée (Plein écran tactile).", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, strings.touchZoneInactiveToast, Toast.LENGTH_SHORT).show()
                                 }
                             },
                             shape = CircleShape,
@@ -4053,6 +4074,7 @@ fun IdeTreeViewNode(
     onRename: (FileNode) -> Unit,
     onMove: (FileNode) -> Unit,
     onDelete: (FileNode) -> Unit,
+    strings: AppStrings = AppStrings(WaifuPreferences(LocalContext.current).appLanguage)
 ) {
     var isExpanded by remember { mutableStateOf(true) }
     var showContextMenu by remember { mutableStateOf(false) }
@@ -4091,7 +4113,7 @@ fun IdeTreeViewNode(
                         modifier = Modifier.padding(end = 6.dp)
                     ) {
                         Text(
-                            text = "[DOSSIER]",
+                            text = strings.folderBadge,
                             fontSize = 8.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
@@ -4121,14 +4143,14 @@ fun IdeTreeViewNode(
                         modifier = Modifier.background(Color(0xFFEDF4FC))
                     ) {
                         DropdownMenuItem(
-                            text = { Text("+ Nouveau sous-dossier", fontSize = 12.sp, color = Color(0xFF0D1B3E)) },
+                            text = { Text(strings.newSubFolder, fontSize = 12.sp, color = Color(0xFF0D1B3E)) },
                             onClick = {
                                 showContextMenu = false
                                 onNewSubFolder(File(node.absolutePath))
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("+ Importer (.zip) ici", fontSize = 12.sp, color = Color(0xFF0D1B3E)) },
+                            text = { Text(strings.importZipHere, fontSize = 12.sp, color = Color(0xFF0D1B3E)) },
                             onClick = {
                                 showContextMenu = false
                                 onImportZip(File(node.absolutePath))
@@ -4136,21 +4158,21 @@ fun IdeTreeViewNode(
                         )
                         if (level > 0) {
                             DropdownMenuItem(
-                                text = { Text("Renommer le dossier", fontSize = 12.sp, color = Color(0xFF0D1B3E)) },
+                                text = { Text(strings.renameFolder, fontSize = 12.sp, color = Color(0xFF0D1B3E)) },
                                 onClick = {
                                     showContextMenu = false
                                     onRename(node)
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Déplacer le dossier", fontSize = 12.sp, color = Color(0xFF0D1B3E)) },
+                                text = { Text(strings.moveFolder, fontSize = 12.sp, color = Color(0xFF0D1B3E)) },
                                 onClick = {
                                     showContextMenu = false
                                     onMove(node)
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Supprimer le dossier", fontSize = 12.sp, color = Color(0xFFD9383A)) },
+                                text = { Text(strings.deleteFolder, fontSize = 12.sp, color = Color(0xFFD9383A)) },
                                 onClick = {
                                     showContextMenu = false
                                     onDelete(node)
@@ -4177,7 +4199,8 @@ fun IdeTreeViewNode(
                             onImportZip = onImportZip,
                             onRename = onRename,
                             onMove = onMove,
-                            onDelete = onDelete
+                            onDelete = onDelete,
+                            strings = strings
                         )
                     }
                 }
@@ -4241,21 +4264,21 @@ fun IdeTreeViewNode(
                     modifier = Modifier.background(Color(0xFFEDF4FC))
                 ) {
                     DropdownMenuItem(
-                        text = { Text("Renommer", fontSize = 12.sp, color = Color(0xFF0D1B3E)) },
+                        text = { Text(strings.rename, fontSize = 12.sp, color = Color(0xFF0D1B3E)) },
                         onClick = {
                             showContextMenu = false
                             onRename(node)
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("Déplacer vers un dossier", fontSize = 12.sp, color = Color(0xFF0D1B3E)) },
+                        text = { Text(strings.moveToFolder, fontSize = 12.sp, color = Color(0xFF0D1B3E)) },
                         onClick = {
                             showContextMenu = false
                             onMove(node)
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("Supprimer", fontSize = 12.sp, color = Color(0xFFD9383A)) },
+                        text = { Text(strings.deleteNormal, fontSize = 12.sp, color = Color(0xFFD9383A)) },
                         onClick = {
                             showContextMenu = false
                             onDelete(node)
@@ -4279,6 +4302,7 @@ fun DigitalClockOverlay(
     dateFormat: String,
     clockOffsetXPx: Float,
     clockOffsetYPx: Float,
+    isEn: Boolean = false,
     onPositionDrag: ((Float, Float) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -4287,7 +4311,7 @@ fun DigitalClockOverlay(
     var timeText by remember { mutableStateOf("") }
     var dateText by remember { mutableStateOf("") }
 
-    LaunchedEffect(clockFormat24h, clockShowSeconds, isDateEnabled, dateFormat) {
+    LaunchedEffect(clockFormat24h, clockShowSeconds, isDateEnabled, dateFormat, isEn) {
         while (true) {
             val now = Calendar.getInstance()
             val timePattern = when {
@@ -4300,7 +4324,7 @@ fun DigitalClockOverlay(
 
             if (isDateEnabled) {
                 val datePattern = if (dateFormat == WaifuPreferences.DATE_FORMAT_FULL) "d MMMM" else "d MMM"
-                dateText = SimpleDateFormat(datePattern, Locale.FRENCH).format(now.time)
+                dateText = SimpleDateFormat(datePattern, if (isEn) Locale.ENGLISH else Locale.FRENCH).format(now.time)
             } else {
                 dateText = ""
             }

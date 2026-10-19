@@ -160,28 +160,35 @@
                 return;
             }
 
-            let nativeW = 0, nativeH = 0;
-            if (model.spineData && model.spineData.width && model.spineData.height && model.spineData.width > 0) {
-                nativeW = model.spineData.width;
-                nativeH = model.spineData.height;
-            } else {
-                try {
-                    const bounds = model.getLocalBounds();
-                    nativeW = bounds.width;
-                    nativeH = bounds.height;
-                } catch (e) {
-                    nativeW = 800;
-                    nativeH = 1200;
+            let bX = 0, bY = 0, bW = 0, bH = 0;
+            try {
+                const bounds = model.getLocalBounds();
+                if (bounds && bounds.width > 20 && bounds.height > 20) {
+                    bX = bounds.x;
+                    bY = bounds.y;
+                    bW = bounds.width;
+                    bH = bounds.height;
+                }
+            } catch (e) {}
+
+            if (bW <= 0 || bH <= 0) {
+                if (model.spineData && model.spineData.width && model.spineData.height && model.spineData.width > 0) {
+                    bX = model.spineData.x || 0;
+                    bY = model.spineData.y || 0;
+                    bW = model.spineData.width;
+                    bH = model.spineData.height;
+                } else {
+                    bW = 800;
+                    bH = 1200;
+                    requestAnimationFrame(fitModel);
                 }
             }
 
-            if (!nativeW || !nativeH || nativeW <= 0 || nativeH <= 0) {
-                nativeW = 800;
-                nativeH = 1200;
-                requestAnimationFrame(fitModel);
+            if (model.pivot && typeof model.pivot.set === "function") {
+                model.pivot.set(bX + bW / 2, bY + bH / 2);
             }
 
-            const baseScale = Math.min(screenW / nativeW, screenH / nativeH) * 0.85;
+            const baseScale = Math.min(screenW / bW, screenH / bH) * 0.85;
             const finalScale = baseScale * customScale;
 
             model.scale.set(finalScale);

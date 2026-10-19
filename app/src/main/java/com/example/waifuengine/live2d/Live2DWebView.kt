@@ -242,14 +242,8 @@ fun Live2DWebView(
                         request: WebResourceRequest?
                     ): WebResourceResponse? {
                         val url = request?.url ?: return null
-                        val defaultResponse = try {
-                            assetLoader?.shouldInterceptRequest(url)
-                        } catch (_: Exception) {
-                            null
-                        }
-                        if (defaultResponse != null) return defaultResponse
 
-                        // Fallback direct si assetLoader ne résout pas la ressource locale
+                        // 1. Priorité absolue aux fichiers locaux (/files/) avec headers CORS et types MIME explicites
                         if (url.host == "appassets.androidview.local") {
                             val path = url.path.orEmpty()
                             if (path.startsWith("/files/")) {
@@ -257,8 +251,10 @@ fun Live2DWebView(
                                 val file = File(context.filesDir, relPath)
                                 if (file.exists() && file.isFile) {
                                     val ext = file.extension.lowercase()
+                                    val isBinary = ext == "moc3" || ext == "moc" || ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "webp"
                                     val mimeType = when (ext) {
                                         "json", "model3.json" -> "application/json"
+                                        "moc3", "moc" -> "application/octet-stream"
                                         "png" -> "image/png"
                                         "jpg", "jpeg" -> "image/jpeg"
                                         "webp" -> "image/webp"
@@ -267,17 +263,38 @@ fun Live2DWebView(
                                         "html" -> "text/html"
                                         else -> "application/octet-stream"
                                     }
+                                    val encoding = if (isBinary) null else "UTF-8"
                                     return try {
                                         val stream = FileInputStream(file)
-                                        val headers = mapOf("Access-Control-Allow-Origin" to "*")
-                                        WebResourceResponse(mimeType, "UTF-8", 200, "OK", headers, stream)
+                                        val headers = mapOf(
+                                            "Access-Control-Allow-Origin" to "*",
+                                            "Access-Control-Allow-Methods" to "GET, OPTIONS, HEAD",
+                                            "Access-Control-Allow-Headers" to "*"
+                                        )
+                                        WebResourceResponse(mimeType, encoding, 200, "OK", headers, stream)
                                     } catch (_: Exception) { null }
                                 }
-                            } else if (path.startsWith("/assets/")) {
+                            }
+                        }
+
+                        // 2. Traitement des assets et autres ressources via assetLoader
+                        val defaultResponse = try {
+                            assetLoader?.shouldInterceptRequest(url)
+                        } catch (_: Exception) {
+                            null
+                        }
+                        if (defaultResponse != null) return defaultResponse
+
+                        // 3. Fallback direct pour /assets/ si assetLoader ne résout pas
+                        if (url.host == "appassets.androidview.local") {
+                            val path = url.path.orEmpty()
+                            if (path.startsWith("/assets/")) {
                                 val relPath = Uri.decode(path.removePrefix("/assets/").trimStart('/'))
                                 val ext = relPath.substringAfterLast('.', "").lowercase()
+                                val isBinary = ext == "moc3" || ext == "moc" || ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "webp"
                                 val mimeType = when (ext) {
                                     "json", "model3.json" -> "application/json"
+                                    "moc3", "moc" -> "application/octet-stream"
                                     "png" -> "image/png"
                                     "jpg", "jpeg" -> "image/jpeg"
                                     "webp" -> "image/webp"
@@ -286,10 +303,11 @@ fun Live2DWebView(
                                     "html" -> "text/html"
                                     else -> "application/octet-stream"
                                 }
+                                val encoding = if (isBinary) null else "UTF-8"
                                 return try {
                                     val stream = context.assets.open(relPath)
                                     val headers = mapOf("Access-Control-Allow-Origin" to "*")
-                                    WebResourceResponse(mimeType, "UTF-8", 200, "OK", headers, stream)
+                                    WebResourceResponse(mimeType, encoding, 200, "OK", headers, stream)
                                 } catch (_: Exception) { null }
                             }
                         }

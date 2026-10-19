@@ -249,14 +249,8 @@ fun SpineWebView(
                         request: WebResourceRequest?
                     ): WebResourceResponse? {
                         val url = request?.url ?: return null
-                        val defaultResponse = try {
-                            assetLoader?.shouldInterceptRequest(url)
-                        } catch (_: Exception) {
-                            null
-                        }
-                        if (defaultResponse != null) return defaultResponse
 
-                        // Fallback direct si assetLoader ne résout pas la ressource locale
+                        // 1. Priorité absolue aux fichiers locaux (/files/) avec headers CORS et types MIME explicites
                         if (url.host == "appassets.androidview.local") {
                             val path = url.path.orEmpty()
                             if (path.startsWith("/files/")) {
@@ -280,11 +274,29 @@ fun SpineWebView(
                                     val encoding = if (isBinary) null else "UTF-8"
                                     return try {
                                         val stream = FileInputStream(file)
-                                        val headers = mapOf("Access-Control-Allow-Origin" to "*")
+                                        val headers = mapOf(
+                                            "Access-Control-Allow-Origin" to "*",
+                                            "Access-Control-Allow-Methods" to "GET, OPTIONS, HEAD",
+                                            "Access-Control-Allow-Headers" to "*"
+                                        )
                                         WebResourceResponse(mimeType, encoding, 200, "OK", headers, stream)
                                     } catch (_: Exception) { null }
                                 }
-                            } else if (path.startsWith("/assets/")) {
+                            }
+                        }
+
+                        // 2. Traitement des assets et autres ressources via assetLoader
+                        val defaultResponse = try {
+                            assetLoader?.shouldInterceptRequest(url)
+                        } catch (_: Exception) {
+                            null
+                        }
+                        if (defaultResponse != null) return defaultResponse
+
+                        // 3. Fallback direct pour /assets/ si assetLoader ne résout pas
+                        if (url.host == "appassets.androidview.local") {
+                            val path = url.path.orEmpty()
+                            if (path.startsWith("/assets/")) {
                                 val relPath = Uri.decode(path.removePrefix("/assets/").trimStart('/'))
                                 val ext = relPath.substringAfterLast('.', "").lowercase()
                                 val isBinary = ext == "skel"

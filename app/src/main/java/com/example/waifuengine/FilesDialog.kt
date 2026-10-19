@@ -161,14 +161,14 @@ fun FilesDialog(
                             modifier = Modifier.padding(16.dp)
                         ) {
                             Text(
-                                text = "Aucun personnage importé",
+                                text = strings.noCharacterImported,
                                 fontSize = 13.sp,
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold,
                                 color = nothingTextPrimary
                             )
                             Text(
-                                text = "Cliquez sur '+ Importer' pour ajouter une archive .zip contenant un modèle Spine ou Live2D, ou utilisez le Workshop pour en télécharger.",
+                                text = strings.filesEmptyTip,
                                 fontSize = 11.sp,
                                 color = nothingTextSecondary,
                                 textAlign = TextAlign.Center
@@ -192,7 +192,8 @@ fun FilesDialog(
                                 onImportZip = onImportZipToFolder,
                                 onRename = onRename,
                                 onMove = onMove,
-                                onDelete = onDelete
+                                onDelete = onDelete,
+                                strings = strings
                             )
                         }
                     }

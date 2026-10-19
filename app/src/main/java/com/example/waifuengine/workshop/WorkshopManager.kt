@@ -407,18 +407,22 @@ object WorkshopManager {
     }
 
     fun getTempPreviewDir(context: Context): File {
-        val dir = File(context.filesDir, ".workshop_temp_preview")
+        val dir = File(context.filesDir, "workshop_temp_preview")
         if (!dir.exists()) dir.mkdirs()
         return dir
     }
 
     fun clearTempPreview(context: Context) {
         try {
-            val dir = File(context.filesDir, ".workshop_temp_preview")
+            val dir = File(context.filesDir, "workshop_temp_preview")
             if (dir.exists()) {
                 dir.deleteRecursively()
-                Log.d("WorkshopManager", "Cleared temp preview folder")
             }
+            val oldDir = File(context.filesDir, ".workshop_temp_preview")
+            if (oldDir.exists()) {
+                oldDir.deleteRecursively()
+            }
+            Log.d("WorkshopManager", "Cleared temp preview folder")
         } catch (e: Exception) {
             Log.w("WorkshopManager", "Error clearing temp preview: ${e.message}")
         }
@@ -564,9 +568,38 @@ object WorkshopManager {
         val tempBase = getTempPreviewDir(context)
         val success = downloadModelToDirectory(context, model, repoUrl, token, tempBase, onProgress)
         if (!success) return null
+
+        val cleanName = model.name.replace(Regex("[^a-zA-Z0-9_\\-\\s]"), "_")
+        val charDir = File(tempBase, cleanName)
+        if (charDir.exists() && charDir.isDirectory) {
+            val allFiles = charDir.walkTopDown().toList()
+            val hasValidModel = allFiles.any { f ->
+                val l = f.name.lowercase(Locale.ROOT)
+                l.endsWith(".moc3") || l.endsWith(".model3.json") || l.endsWith(".model.json") || l.endsWith(".skel") || l.endsWith(".atlas")
+            }
+            if (!hasValidModel) {
+                val hasUnityFS = allFiles.any { f ->
+                    if (f.isFile && f.length() >= 7) {
+                        try {
+                            val magic = ByteArray(7)
+                            f.inputStream().use { it.read(magic) }
+                            String(magic) == "UnityFS"
+                        } catch (_: Exception) { false }
+                    } else false
+                }
+                if (hasUnityFS) {
+                    Log.w("WorkshopManager", "Model ${model.name} contains raw UnityFS asset bundle, not supported for direct preview")
+                    return null
+                }
+            }
+        }
+
         val allChars = CharacterRepository.loadAllCustomCharacters(context, tempBase)
         return allChars.firstOrNull { it.name.equals(model.name, ignoreCase = true) }
             ?: allChars.firstOrNull { it.folderPath.contains(model.name, ignoreCase = true) }
+            ?: allChars.firstOrNull { it.folderPath.contains(cleanName, ignoreCase = true) }
+            ?: allChars.firstOrNull { File(it.folderPath).name.equals(model.name, ignoreCase = true) }
+            ?: allChars.firstOrNull { File(it.folderPath).name.equals(cleanName, ignoreCase = true) }
             ?: allChars.firstOrNull()
     }
 
