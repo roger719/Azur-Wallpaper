@@ -206,6 +206,11 @@ fun SpineWebView(
                 settings.mediaPlaybackRequiresUserGesture = false
                 settings.cacheMode = WebSettings.LOAD_DEFAULT
                 settings.loadsImagesAutomatically = true
+                settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                @Suppress("DEPRECATION")
+                settings.allowFileAccessFromFileURLs = true
+                @Suppress("DEPRECATION")
+                settings.allowUniversalAccessFromFileURLs = true
                 overScrollMode = View.OVER_SCROLL_NEVER
                 isNestedScrollingEnabled = false
                 setBackgroundColor(AndroidColor.TRANSPARENT)
@@ -259,8 +264,10 @@ fun SpineWebView(
                                 val file = File(context.filesDir, relPath)
                                 if (file.exists() && file.isFile) {
                                     val ext = file.extension.lowercase()
+                                    val isBinary = ext == "skel"
                                     val mimeType = when (ext) {
-                                        "json", "skel" -> "application/json"
+                                        "json" -> "application/json"
+                                        "skel" -> "application/octet-stream"
                                         "atlas" -> "text/plain"
                                         "png" -> "image/png"
                                         "jpg", "jpeg" -> "image/jpeg"
@@ -270,17 +277,20 @@ fun SpineWebView(
                                         "html" -> "text/html"
                                         else -> "application/octet-stream"
                                     }
+                                    val encoding = if (isBinary) null else "UTF-8"
                                     return try {
                                         val stream = FileInputStream(file)
                                         val headers = mapOf("Access-Control-Allow-Origin" to "*")
-                                        WebResourceResponse(mimeType, "UTF-8", 200, "OK", headers, stream)
+                                        WebResourceResponse(mimeType, encoding, 200, "OK", headers, stream)
                                     } catch (_: Exception) { null }
                                 }
                             } else if (path.startsWith("/assets/")) {
                                 val relPath = Uri.decode(path.removePrefix("/assets/").trimStart('/'))
                                 val ext = relPath.substringAfterLast('.', "").lowercase()
+                                val isBinary = ext == "skel"
                                 val mimeType = when (ext) {
-                                    "json", "skel" -> "application/json"
+                                    "json" -> "application/json"
+                                    "skel" -> "application/octet-stream"
                                     "atlas" -> "text/plain"
                                     "png" -> "image/png"
                                     "jpg", "jpeg" -> "image/jpeg"
@@ -290,10 +300,11 @@ fun SpineWebView(
                                     "html" -> "text/html"
                                     else -> "application/octet-stream"
                                 }
+                                val encoding = if (isBinary) null else "UTF-8"
                                 return try {
                                     val stream = context.assets.open(relPath)
                                     val headers = mapOf("Access-Control-Allow-Origin" to "*")
-                                    WebResourceResponse(mimeType, "UTF-8", 200, "OK", headers, stream)
+                                    WebResourceResponse(mimeType, encoding, 200, "OK", headers, stream)
                                 } catch (_: Exception) { null }
                             }
                         }

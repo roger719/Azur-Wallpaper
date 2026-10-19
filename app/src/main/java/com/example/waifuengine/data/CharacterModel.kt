@@ -272,7 +272,7 @@ object CharacterRepository {
         )
     }
 
-    private fun parseSkinDirectory(skinFolder: File): CharacterItem? {
+    fun parseSkinDirectory(skinFolder: File): CharacterItem? {
         return when {
             isLive2DDirectory(skinFolder) -> parseLive2DDirectory(skinFolder)
             isSpineDirectory(skinFolder) -> parseSpineDirectory(skinFolder)

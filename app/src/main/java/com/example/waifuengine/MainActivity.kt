@@ -71,6 +71,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -78,11 +79,13 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.FragmentActivity
 import android.webkit.WebView
+import com.example.waifuengine.data.AppStrings
 import com.example.waifuengine.data.CharacterItem
 import com.example.waifuengine.data.CharacterRepository
 import com.example.waifuengine.data.EngineType
 import com.example.waifuengine.data.FileNode
 import com.example.waifuengine.data.PresetItem
+import com.example.waifuengine.data.VariantInfo
 import com.example.waifuengine.data.WaifuPreferences
 import com.example.waifuengine.live2d.Live2DUrlHelper
 import com.example.waifuengine.live2d.Live2DWebView
@@ -92,6 +95,7 @@ import com.example.waifuengine.spine.SpineWebView
 import com.example.waifuengine.service.WaifuLive2DWallpaperService
 import com.example.waifuengine.service.WaifuSpineWallpaperService
 import com.example.waifuengine.ui.theme.WaifuEngineTheme
+import com.example.waifuengine.workshop.WorkshopDialog
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -571,6 +575,12 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
     }
 
     // Dialog States
+    var showSettingsDialog by remember { mutableStateOf(false) }
+    var currentAppLanguage by remember { mutableStateOf(prefs.appLanguage) }
+    val strings = remember(currentAppLanguage) { AppStrings(currentAppLanguage) }
+
+    var showFilesDialog by remember { mutableStateOf(false) }
+    var showWorkshopDialog by remember { mutableStateOf(false) }
     var pendingZipUri by remember { mutableStateOf<Uri?>(null) }
     var pendingZipName by remember { mutableStateOf("") }
     var showImportDialog by remember { mutableStateOf(false) }
@@ -864,6 +874,19 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     onClick = {
                         val cleanName = presetNameInput.trim()
                         if (cleanName.isNotEmpty()) {
+                            val isSpine = (selectedCharacter?.engineType == EngineType.SPINE &&
+                                !currentSkelPath.endsWith(".model3.json", ignoreCase = true) &&
+                                !currentSkelPath.endsWith(".model.json", ignoreCase = true) &&
+                                !currentSkelPath.endsWith(".moc3", ignoreCase = true)) ||
+                                currentSkelPath.endsWith(".skel", ignoreCase = true) ||
+                                currentSkelPath.endsWith(".skel.bytes", ignoreCase = true) ||
+                                SpineModelHelper.isSpineFile(currentSkelPath)
+
+                            val currentAtlas = if (isSpine) {
+                                selectedVariant?.spineAtlasPath?.ifEmpty { null }
+                                    ?: SpineModelHelper.findAtlasFile(File(currentSkelPath).parentFile ?: File(""))?.absolutePath ?: ""
+                            } else ""
+
                             val newPreset = PresetItem(
                                 id = "${System.currentTimeMillis()}",
                                 name = cleanName,
@@ -871,8 +894,8 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                 scale = currentScale,
                                 offsetX = currentOffsetX,
                                 offsetY = currentOffsetY,
-                                selectedCharacterName = prefs.selectedCharacterName,
-                                selectedVariantLabel = prefs.selectedVariantLabel,
+                                selectedCharacterName = selectedCharacter?.name ?: prefs.selectedCharacterName,
+                                selectedVariantLabel = selectedVariant?.label ?: prefs.selectedVariantLabel,
                                 wakeupAnimation = wakeupAnimation,
                                 clickAnimation = clickAnimation,
                                 isPointerTrackingEnabled = isPointerTrackingEnabled,
@@ -902,7 +925,8 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                 clockPosition = clockPosition,
                                 clockOffsetX = clockOffsetX,
                                 clockOffsetY = clockOffsetY,
-                                engineType = (selectedCharacter?.engineType ?: EngineType.LIVE2D).name
+                                engineType = if (isSpine) WaifuPreferences.ENGINE_SPINE else WaifuPreferences.ENGINE_LIVE2D,
+                                spineAtlasPath = currentAtlas
                             )
                             prefs.savePreset(newPreset)
                             userPresets = prefs.getPresets()
@@ -1063,6 +1087,46 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     }
 
                     if (isTouchZoneCustom) {
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Position Horizontale (X)", fontSize = 10.sp, color = nothingTextSecondary)
+                                Text("${(touchZoneLeft * 100).toInt()}%", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Slider(
+                                value = touchZoneLeft,
+                                onValueChange = {
+                                    touchZoneLeft = it
+                                    prefs.touchZoneLeft = it
+                                },
+                                valueRange = 0.0f..0.9f,
+                                colors = SliderDefaults.colors(thumbColor = Color.Red, activeTrackColor = Color.Red)
+                            )
+                        }
+
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Position Verticale (Y)", fontSize = 10.sp, color = nothingTextSecondary)
+                                Text("${(touchZoneTop * 100).toInt()}%", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Slider(
+                                value = touchZoneTop,
+                                onValueChange = {
+                                    touchZoneTop = it
+                                    prefs.touchZoneTop = it
+                                },
+                                valueRange = 0.0f..0.9f,
+                                colors = SliderDefaults.colors(thumbColor = Color.Red, activeTrackColor = Color.Red)
+                            )
+                        }
+
                         Column {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1247,6 +1311,79 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                 TextButton(onClick = { showRagebaitDisableDialog = false }) {
                     Text("ANNULER", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = nothingTextSecondary)
                 }
+            }
+        )
+    }
+
+    // --- DIALOGUE WORKSHOP DISTANT ---
+    if (showWorkshopDialog) {
+        WorkshopDialog(
+            prefs = prefs,
+            onDismiss = { showWorkshopDialog = false },
+            onModelApplied = { charItem ->
+                updateSelectedCharacterAndVariant(charItem)
+                showWorkshopDialog = false
+            },
+            onTreeUpdated = {
+                refreshFileManager()
+            }
+        )
+    }
+
+    // --- DIALOGUE PARAMÈTRES (LANGUE & CONFIGURATION) ---
+    if (showSettingsDialog) {
+        SettingsDialog(
+            prefs = prefs,
+            currentLanguage = currentAppLanguage,
+            onLanguageChanged = { newLang ->
+                currentAppLanguage = newLang
+            },
+            onDismiss = { showSettingsDialog = false }
+        )
+    }
+
+    // --- DIALOGUE ARBORESCENCE FICHIERS LOCAUX ---
+    if (showFilesDialog) {
+        FilesDialog(
+            rootNode = rootNode,
+            allCharacters = allCharacters,
+            selectedCharacterPath = selectedCharacter?.folderPath ?: "",
+            appLanguage = currentAppLanguage,
+            onDismiss = { showFilesDialog = false },
+            onSelectCharacter = { charItem ->
+                updateSelectedCharacterAndVariant(charItem)
+                showFilesDialog = false
+            },
+            onNewFolder = {
+                targetFolderForNewSub = rootDir
+                folderNameInput = ""
+                showCreateFolderDialog = true
+            },
+            onImportZip = {
+                targetImportFolder = rootDir
+                zipPickerLauncher.launch("application/zip")
+            },
+            onNewSubFolder = { folderFile ->
+                targetFolderForNewSub = folderFile
+                folderNameInput = ""
+                showCreateFolderDialog = true
+            },
+            onImportZipToFolder = { folderFile ->
+                targetImportFolder = folderFile
+                zipPickerLauncher.launch("application/zip")
+            },
+            onRename = { nodeToRename ->
+                selectedNodeForAction = nodeToRename
+                renameInputText = nodeToRename.name
+                showRenameDialog = true
+            },
+            onMove = { nodeToMove ->
+                selectedNodeForAction = nodeToMove
+                showMoveDialog = true
+            },
+            onDelete = { nodeToDelete ->
+                selectedNodeForAction = nodeToDelete
+                showDeleteDialog = true
             }
         )
     }
@@ -1890,25 +2027,53 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                 .verticalScroll(rememberScrollState())
                 .background(nothingBg)
         ) {
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 10.dp)
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Azur Wallpaper",
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    color = nothingTextSecondary
-                )
-                Text(
-                    text = selectedCharacter?.name ?: "Nom Personnage",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = nothingTextPrimary
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Azur Wallpaper",
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = nothingTextSecondary
+                    )
+                    Text(
+                        text = selectedCharacter?.name ?: strings.defaultCharacterName,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = nothingTextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Bouton Paramètres (carré avec angles arrondis et engrenage au centre)
+                Surface(
+                    onClick = { showSettingsDialog = true },
+                    shape = RoundedCornerShape(12.dp),
+                    color = nothingSurface,
+                    border = BorderStroke(1.2.dp, nothingBorder),
+                    modifier = Modifier.size(42.dp)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Text(
+                            text = "⚙",
+                            fontSize = 20.sp,
+                            color = nothingTextPrimary
+                        )
+                    }
+                }
             }
 
             // Zone d'Aperçu Carte (Taille Fixe 380dp - Défilement synchrone natif à 100%)
@@ -1951,9 +2116,20 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     )
                 }
 
-                val isSpineModel = selectedCharacter?.engineType == EngineType.SPINE ||
+                val isSpineModel = (selectedCharacter?.engineType == EngineType.SPINE &&
+                    !currentSkelPath.endsWith(".model3.json", ignoreCase = true) &&
+                    !currentSkelPath.endsWith(".model.json", ignoreCase = true) &&
+                    !currentSkelPath.endsWith(".moc3", ignoreCase = true) &&
+                    !currentSkelPath.endsWith(".moc", ignoreCase = true)) ||
                     currentSkelPath.endsWith(".skel", ignoreCase = true) ||
+                    currentSkelPath.endsWith(".skel.bytes", ignoreCase = true) ||
                     SpineModelHelper.isSpineFile(currentSkelPath)
+
+                val currentAtlas = if (isSpineModel) {
+                    selectedVariant?.spineAtlasPath?.ifEmpty { null }
+                        ?: prefs.spineAtlasPath.ifEmpty { null }
+                        ?: SpineModelHelper.findAtlasFile(File(currentSkelPath).parentFile ?: File(""))?.absolutePath ?: ""
+                } else ""
                 val isCardActive = !isFullscreen
 
                 Live2DWebView(
@@ -1973,7 +2149,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
                 SpineWebView(
                     modelPath = if (isSpineModel) currentSkelPath else "",
-                    atlasPath = if (isSpineModel) (selectedVariant?.spineAtlasPath ?: "") else "",
+                    atlasPath = if (isSpineModel) currentAtlas else "",
                     scale = currentScale,
                     offsetX = currentOffsetX,
                     offsetY = currentOffsetY,
@@ -2369,19 +2545,24 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                                     currentOffsetX = preset.offsetX
                                                                     currentOffsetY = preset.offsetY
 
+                                                                    prefs.skelPath = preset.skelPath
+                                                                    prefs.scale = preset.scale
+                                                                    prefs.offsetX = preset.offsetX
+                                                                    prefs.offsetY = preset.offsetY
+
                                                                     wakeupAnimation = preset.wakeupAnimation
                                                                     clickAnimation = preset.clickAnimation
                                                                     isPointerTrackingEnabled = preset.isPointerTrackingEnabled
+
+                                                                    prefs.wakeupAnimation = preset.wakeupAnimation
+                                                                    prefs.clickAnimation = preset.clickAnimation
+                                                                    prefs.isPointerTrackingEnabled = preset.isPointerTrackingEnabled
 
                                                                     isTouchZoneCustom = preset.isTouchZoneCustom
                                                                     touchZoneLeft = preset.touchZoneLeft
                                                                     touchZoneTop = preset.touchZoneTop
                                                                     touchZoneWidth = preset.touchZoneWidth
                                                                     touchZoneHeight = preset.touchZoneHeight
-
-                                                                    prefs.wakeupAnimation = preset.wakeupAnimation
-                                                                    prefs.clickAnimation = preset.clickAnimation
-                                                                    prefs.isPointerTrackingEnabled = preset.isPointerTrackingEnabled
 
                                                                     prefs.isTouchZoneCustom = preset.isTouchZoneCustom
                                                                     prefs.touchZoneLeft = preset.touchZoneLeft
@@ -2392,9 +2573,21 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                                     bgType = preset.bgType
                                                                     pickedColor = Color(preset.bgColor)
 
+                                                                    prefs.bgType = preset.bgType
+                                                                    prefs.bgColor = preset.bgColor
+                                                                    prefs.bgImagePath = preset.bgImagePath
+                                                                    prefs.bgVideoPath = preset.bgVideoPath
+                                                                    prefs.bgScale = preset.bgScale
+                                                                    prefs.bgOffsetX = preset.bgOffsetX
+                                                                    prefs.bgOffsetY = preset.bgOffsetY
+
                                                                     musicPath = preset.musicPath
                                                                     isMusicEnabled = preset.isMusicEnabled
                                                                     musicVolume = preset.musicVolume
+
+                                                                    prefs.musicPath = preset.musicPath
+                                                                    prefs.isMusicEnabled = preset.isMusicEnabled
+                                                                    prefs.musicVolume = preset.musicVolume
 
                                                                     // APPLICATION DES PARAMÈTRES D'HORLOGE DU PRÉSET
                                                                     isClockEnabled = preset.isClockEnabled
@@ -2421,11 +2614,85 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                                     prefs.clockOffsetX = preset.clockOffsetX
                                                                     prefs.clockOffsetY = preset.clockOffsetY
 
-                                                                    val charMatch = allCharacters.firstOrNull { it.name == preset.selectedCharacterName }
-                                                                    if (charMatch != null) {
-                                                                        updateSelectedCharacterAndVariant(charMatch)
-                                                                        val varMatch = charMatch.variants.firstOrNull { it.label == preset.selectedVariantLabel } ?: charMatch.variants.firstOrNull()
-                                                                        selectedVariant = varMatch
+                                                                    // Résolution robuste du personnage et du variant pour éviter tout freeze ou écran noir
+                                                                    val isSpinePreset = preset.engineType == WaifuPreferences.ENGINE_SPINE ||
+                                                                        preset.skelPath.endsWith(".skel", ignoreCase = true) ||
+                                                                        preset.skelPath.endsWith(".skel.bytes", ignoreCase = true) ||
+                                                                        SpineModelHelper.isSpineFile(preset.skelPath)
+                                                                    val finalEngine = if (isSpinePreset) EngineType.SPINE else EngineType.LIVE2D
+                                                                    val resolvedAtlas = if (isSpinePreset) {
+                                                                        preset.spineAtlasPath.ifEmpty { null }
+                                                                            ?: SpineModelHelper.findAtlasFile(File(preset.skelPath).parentFile ?: File(""))?.absolutePath ?: ""
+                                                                    } else ""
+
+                                                                    // 1. Recherche exacte par chemin de modèle / moc / json
+                                                                    var resolvedChar = allCharacters.firstOrNull { char ->
+                                                                        char.variants.any { v ->
+                                                                            (v.modelJsonPath.isNotEmpty() && (v.modelJsonPath == preset.skelPath || preset.skelPath.endsWith(v.modelJsonPath))) ||
+                                                                            (v.mocPath.isNotEmpty() && (v.mocPath == preset.skelPath || preset.skelPath.endsWith(v.mocPath)))
+                                                                        }
+                                                                    }
+
+                                                                    // 2. Recherche par dossier parent
+                                                                    if (resolvedChar == null && preset.skelPath.isNotEmpty()) {
+                                                                        val parentFolder = File(preset.skelPath).parentFile?.absolutePath ?: ""
+                                                                        resolvedChar = allCharacters.firstOrNull { char ->
+                                                                            char.folderPath.isNotEmpty() && (parentFolder.startsWith(char.folderPath) || char.folderPath.startsWith(parentFolder))
+                                                                        }
+                                                                    }
+
+                                                                    // 3. Recherche par nom de personnage
+                                                                    if (resolvedChar == null && preset.selectedCharacterName.isNotEmpty() && preset.selectedCharacterName != "Compagnon") {
+                                                                        resolvedChar = allCharacters.firstOrNull { char ->
+                                                                            char.name.equals(preset.selectedCharacterName, ignoreCase = true)
+                                                                        }
+                                                                    }
+
+                                                                    val charName = preset.selectedCharacterName.ifEmpty {
+                                                                        File(preset.skelPath).parentFile?.name ?: "Compagnon"
+                                                                    }
+                                                                    val varLabel = preset.selectedVariantLabel.ifEmpty { "Défaut" }
+
+                                                                    var resolvedVariant: VariantInfo? = null
+                                                                    if (resolvedChar != null) {
+                                                                        resolvedVariant = resolvedChar.variants.firstOrNull { v ->
+                                                                            v.modelJsonPath == preset.skelPath || v.mocPath == preset.skelPath
+                                                                        } ?: resolvedChar.variants.firstOrNull { it.label == preset.selectedVariantLabel }
+                                                                          ?: resolvedChar.variants.firstOrNull()
+                                                                    }
+
+                                                                    if (resolvedChar == null) {
+                                                                        val synthesizedVariant = VariantInfo(
+                                                                            label = varLabel,
+                                                                            modelJsonPath = if (finalEngine == EngineType.SPINE) "" else preset.skelPath,
+                                                                            mocPath = if (finalEngine == EngineType.SPINE) preset.skelPath else "",
+                                                                            spineAtlasPath = resolvedAtlas,
+                                                                            engineType = finalEngine
+                                                                        )
+                                                                        resolvedChar = CharacterItem(
+                                                                            id = preset.id,
+                                                                            name = charName,
+                                                                            folderPath = File(preset.skelPath).parentFile?.absolutePath ?: "",
+                                                                            isCustom = true,
+                                                                            engineType = finalEngine,
+                                                                            variants = listOf(synthesizedVariant)
+                                                                        )
+                                                                        resolvedVariant = synthesizedVariant
+                                                                    } else if (resolvedVariant != null && finalEngine == EngineType.SPINE && resolvedVariant.spineAtlasPath.isEmpty() && resolvedAtlas.isNotEmpty()) {
+                                                                        resolvedVariant = resolvedVariant.copy(spineAtlasPath = resolvedAtlas)
+                                                                    }
+
+                                                                    selectedCharacter = resolvedChar
+                                                                    selectedVariant = resolvedVariant
+
+                                                                    prefs.selectedCharacterName = resolvedChar.name
+                                                                    prefs.selectedVariantLabel = resolvedVariant?.label ?: varLabel
+                                                                    if (finalEngine == EngineType.SPINE) {
+                                                                        prefs.engineType = WaifuPreferences.ENGINE_SPINE
+                                                                        prefs.spineAtlasPath = resolvedAtlas
+                                                                    } else {
+                                                                        prefs.engineType = WaifuPreferences.ENGINE_LIVE2D
+                                                                        prefs.spineAtlasPath = ""
                                                                     }
 
                                                                     Toast.makeText(context, "Préset '${preset.name}' appliqué !", Toast.LENGTH_SHORT).show()
@@ -2450,105 +2717,78 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                             }
                                         }
 
-                                        // SECTION FICHIERS & ARBORESCENCE (DANS LA CASE BLEU CLAIR SANS OUTLINE)
-                                        Card(
-                                            colors = CardDefaults.cardColors(containerColor = Color(0xFFD2E3F5)),
-                                            shape = RoundedCornerShape(16.dp),
-                                            modifier = Modifier.fillMaxWidth()
+                                        // DEUX ENCADRÉS : FICHIERS & WORKSHOP (HIÉRARCHIE VISUELLE ÉPURÉE)
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                                         ) {
-                                            Column(
+                                            // ENCADRÉ FICHIERS (OUVRE LA FENÊTRE DE L'ARBORESCENCE)
+                                            Surface(
                                                 modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(12.dp),
-                                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                                    .weight(1f)
+                                                    .height(85.dp)
+                                                    .clip(RoundedCornerShape(18.dp))
+                                                    .clickable { showFilesDialog = true },
+                                                color = nothingSurface,
+                                                shape = RoundedCornerShape(18.dp),
+                                                border = BorderStroke(1.5.dp, nothingBorder)
                                             ) {
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    verticalAlignment = Alignment.CenterVertically
+                                                Box(
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentAlignment = Alignment.Center
                                                 ) {
-                                                    Text(
-                                                        text = "Fichiers :",
-                                                        fontSize = 12.sp,
-                                                        fontFamily = FontFamily.Monospace,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = nothingTextPrimary
-                                                    )
-
-                                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                        OutlinedButton(
-                                                            onClick = {
-                                                                targetFolderForNewSub = rootDir
-                                                                folderNameInput = ""
-                                                                showCreateFolderDialog = true
-                                                            },
-                                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                                                            shape = RoundedCornerShape(12.dp),
-                                                            border = BorderStroke(1.dp, nothingBorder)
-                                                        ) {
-                                                            Text("+ Dossier", fontSize = 10.sp, color = nothingTextPrimary, fontWeight = FontWeight.Bold)
-                                                        }
-
-                                                        Button(
-                                                            onClick = {
-                                                                targetImportFolder = rootDir
-                                                                zipPickerLauncher.launch("application/zip")
-                                                            },
-                                                            colors = ButtonDefaults.buttonColors(containerColor = nothingBlack),
-                                                            shape = RoundedCornerShape(12.dp),
-                                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
-                                                        ) {
-                                                            Text("+ Importer", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                                                        }
-                                                    }
-                                                }
-
-                                                if (allCharacters.isEmpty()) {
                                                     Column(
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .padding(vertical = 24.dp),
-                                                        horizontalAlignment = Alignment.CenterHorizontally
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.spacedBy(4.dp)
                                                     ) {
                                                         Text(
-                                                            text = "Aucun personnage importé",
-                                                            fontSize = 12.sp,
+                                                            text = strings.files,
+                                                            fontSize = 15.sp,
                                                             fontFamily = FontFamily.Monospace,
                                                             fontWeight = FontWeight.Bold,
+                                                            color = nothingTextPrimary
+                                                        )
+                                                        Text(
+                                                            text = if (strings.isEn) "Tree view" else "Arborescence",
+                                                            fontSize = 10.sp,
+                                                            fontFamily = FontFamily.Monospace,
                                                             color = nothingTextSecondary
                                                         )
                                                     }
-                                                } else {
-                                                    rootNode?.let { node ->
-                                                        IdeTreeViewNode(
-                                                            node = node,
-                                                            level = 0,
-                                                            selectedCharacterPath = selectedCharacter?.folderPath ?: "",
-                                                            onSelectCharacter = { charItem ->
-                                                                updateSelectedCharacterAndVariant(charItem)
-                                                            },
-                                                            onNewSubFolder = { folderFile ->
-                                                                targetFolderForNewSub = folderFile
-                                                                folderNameInput = ""
-                                                                showCreateFolderDialog = true
-                                                            },
-                                                            onImportZip = { folderFile ->
-                                                                targetImportFolder = folderFile
-                                                                zipPickerLauncher.launch("application/zip")
-                                                            },
-                                                            onRename = { nodeToRename ->
-                                                                selectedNodeForAction = nodeToRename
-                                                                renameInputText = nodeToRename.name
-                                                                showRenameDialog = true
-                                                            },
-                                                            onMove = { nodeToMove ->
-                                                                selectedNodeForAction = nodeToMove
-                                                                showMoveDialog = true
-                                                            },
-                                                            onDelete = { nodeToDelete ->
-                                                                selectedNodeForAction = nodeToDelete
-                                                                showDeleteDialog = true
-                                                            }
+                                                }
+                                            }
+
+                                            // ENCADRÉ WORKSHOP (OUVRE LA FENÊTRE DU WORKSHOP GITHUB)
+                                            Surface(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .height(85.dp)
+                                                    .clip(RoundedCornerShape(18.dp))
+                                                    .clickable { showWorkshopDialog = true },
+                                                color = nothingSurface,
+                                                shape = RoundedCornerShape(18.dp),
+                                                border = BorderStroke(1.5.dp, nothingBorder)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Column(
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = strings.workshop,
+                                                            fontSize = 15.sp,
+                                                            fontFamily = FontFamily.Monospace,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = nothingTextPrimary
+                                                        )
+                                                        Text(
+                                                            text = if (strings.isEn) "Remote repo" else "Dépôt distant",
+                                                            fontSize = 10.sp,
+                                                            fontFamily = FontFamily.Monospace,
+                                                            color = nothingTextSecondary
                                                         )
                                                     }
                                                 }
@@ -3444,9 +3684,20 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     )
                 }
 
-                val isSpineModel = selectedCharacter?.engineType == EngineType.SPINE ||
+                val isSpineModel = (selectedCharacter?.engineType == EngineType.SPINE &&
+                    !currentSkelPath.endsWith(".model3.json", ignoreCase = true) &&
+                    !currentSkelPath.endsWith(".model.json", ignoreCase = true) &&
+                    !currentSkelPath.endsWith(".moc3", ignoreCase = true) &&
+                    !currentSkelPath.endsWith(".moc", ignoreCase = true)) ||
                     currentSkelPath.endsWith(".skel", ignoreCase = true) ||
+                    currentSkelPath.endsWith(".skel.bytes", ignoreCase = true) ||
                     SpineModelHelper.isSpineFile(currentSkelPath)
+
+                val currentAtlas = if (isSpineModel) {
+                    selectedVariant?.spineAtlasPath?.ifEmpty { null }
+                        ?: prefs.spineAtlasPath.ifEmpty { null }
+                        ?: SpineModelHelper.findAtlasFile(File(currentSkelPath).parentFile ?: File(""))?.absolutePath ?: ""
+                } else ""
 
                 Live2DWebView(
                     modelJsonPath = if (!isSpineModel) currentSkelPath else "",
@@ -3465,7 +3716,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
                 SpineWebView(
                     modelPath = if (isSpineModel) currentSkelPath else "",
-                    atlasPath = if (isSpineModel) (selectedVariant?.spineAtlasPath ?: "") else "",
+                    atlasPath = if (isSpineModel) currentAtlas else "",
                     scale = currentScale,
                     offsetX = currentOffsetX,
                     offsetY = currentOffsetY,
@@ -3523,6 +3774,8 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                 .pointerInput(Unit) {
                                     detectDragGestures { change, dragAmount ->
                                         change.consume()
+                                        isTouchZoneCustom = true
+                                        prefs.isTouchZoneCustom = true
                                         val deltaNormX = dragAmount.x / viewWidth
                                         val deltaNormY = dragAmount.y / viewHeight
                                         val newLeft = (touchZoneLeft + deltaNormX).coerceIn(0f, 1f - touchZoneWidth)
@@ -3555,6 +3808,8 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                     .pointerInput(Unit) {
                                         detectDragGestures { change, dragAmount ->
                                             change.consume()
+                                            isTouchZoneCustom = true
+                                            prefs.isTouchZoneCustom = true
                                             val deltaNormX = dragAmount.x / viewWidth
                                             val deltaNormY = dragAmount.y / viewHeight
                                             val newWidth = (touchZoneWidth + deltaNormX).coerceIn(0.1f, 1f - touchZoneLeft)

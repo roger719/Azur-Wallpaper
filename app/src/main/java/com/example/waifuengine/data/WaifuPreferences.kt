@@ -57,6 +57,7 @@ data class PresetItem(
     val clockOffsetX: Float = 0f,
     val clockOffsetY: Float = -350f,
     val engineType: String = WaifuPreferences.ENGINE_LIVE2D,
+    val spineAtlasPath: String = "",
 )
 
 class WaifuPreferences(private val context: Context) {
@@ -137,6 +138,18 @@ class WaifuPreferences(private val context: Context) {
     var bgImagePath: String
         get() = prefs.getString(KEY_BG_IMAGE, "") ?: ""
         set(value) = prefs.edit { putString(KEY_BG_IMAGE, value) }
+
+    var workshopRepoUrl: String
+        get() = prefs.getString(KEY_WORKSHOP_REPO_URL, "https://github.com/roger719/Azur-Database") ?: "https://github.com/roger719/Azur-Database"
+        set(value) = prefs.edit { putString(KEY_WORKSHOP_REPO_URL, value) }
+
+    var workshopGithubToken: String
+        get() = prefs.getString(KEY_WORKSHOP_GITHUB_TOKEN, "") ?: ""
+        set(value) = prefs.edit { putString(KEY_WORKSHOP_GITHUB_TOKEN, value) }
+
+    var appLanguage: String
+        get() = prefs.getString(KEY_APP_LANGUAGE, "fr") ?: "fr"
+        set(value) = prefs.edit { putString(KEY_APP_LANGUAGE, value) }
 
     var bgVideoPath: String
         get() = prefs.getString(KEY_BG_VIDEO, "") ?: ""
@@ -327,7 +340,8 @@ class WaifuPreferences(private val context: Context) {
                         clockPosition = obj.optString("clockPosition", CLOCK_POS_FRONT),
                         clockOffsetX = obj.optDouble("clockOffsetX", 0.0).toFloat(),
                         clockOffsetY = obj.optDouble("clockOffsetY", -350.0).toFloat(),
-                        engineType = obj.optString("engineType", ENGINE_LIVE2D)
+                        engineType = obj.optString("engineType", ENGINE_LIVE2D),
+                        spineAtlasPath = obj.optString("spineAtlasPath", "")
                     )
                 )
             }
@@ -343,6 +357,7 @@ class WaifuPreferences(private val context: Context) {
                 put("name", item.name)
                 put("skelPath", item.skelPath)
                 put("engineType", item.engineType)
+                put("spineAtlasPath", item.spineAtlasPath)
                 put("scale", item.scale)
                 put("offsetX", item.offsetX)
                 put("offsetY", item.offsetY)
@@ -463,6 +478,11 @@ class WaifuPreferences(private val context: Context) {
         const val KEY_BG_OFFSET_X = "key_bg_offset_x"
         const val KEY_BG_OFFSET_Y = "key_bg_offset_y"
         const val KEY_ACTIVE_TAB = "key_active_tab"
+        const val KEY_WORKSHOP_REPO_URL = "key_workshop_repo_url"
+        const val KEY_WORKSHOP_GITHUB_TOKEN = "key_workshop_github_token"
+        const val KEY_APP_LANGUAGE = "key_app_language"
+        const val LANGUAGE_FR = "fr"
+        const val LANGUAGE_EN = "en"
 
         const val KEY_VIDEO_MUTED = "key_video_muted"
         const val KEY_MUSIC_PATH = "key_music_path"

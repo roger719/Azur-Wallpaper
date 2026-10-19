@@ -250,25 +250,35 @@
                 return;
             }
 
-            let nativeW = (model.internalModel && model.internalModel.width) ? model.internalModel.width : (model.width / (model.scale.x || 1));
-            let nativeH = (model.internalModel && model.internalModel.height) ? model.internalModel.height : (model.height / (model.scale.y || 1));
+            let bX = 0, bY = 0, bW = 0, bH = 0;
+            try {
+                const bounds = model.getLocalBounds();
+                if (bounds && bounds.width > 20 && bounds.height > 20) {
+                    bX = bounds.x;
+                    bY = bounds.y;
+                    bW = bounds.width;
+                    bH = bounds.height;
+                }
+            } catch (e) {}
 
-            if (!nativeW || !nativeH || nativeW <= 0 || nativeH <= 0) {
+            if (bW <= 0 || bH <= 0) {
                 if (model.internalModel && model.internalModel.originalWidth && model.internalModel.originalHeight) {
-                    nativeW = model.internalModel.originalWidth;
-                    nativeH = model.internalModel.originalHeight;
+                    bW = model.internalModel.originalWidth;
+                    bH = model.internalModel.originalHeight;
                 } else {
-                    nativeW = 800;
-                    nativeH = 1200;
+                    bW = 800;
+                    bH = 1200;
                     requestAnimationFrame(fitModel);
                 }
             }
 
-            if (model.anchor && typeof model.anchor.set === "function") {
+            if (model.pivot && typeof model.pivot.set === "function") {
+                model.pivot.set(bX + bW / 2, bY + bH / 2);
+            } else if (model.anchor && typeof model.anchor.set === "function") {
                 model.anchor.set(0.5, 0.5);
             }
 
-            const baseScale = Math.min(screenW / nativeW, screenH / nativeH) * 0.85;
+            const baseScale = Math.min(screenW / bW, screenH / bH) * 0.85;
             const finalScale = baseScale * customScale;
 
             model.scale.set(finalScale);
@@ -445,6 +455,7 @@
                 transparent: true,
                 backgroundAlpha: 0,
                 clearBeforeRender: true,
+                preserveDrawingBuffer: true,
                 antialias: true,
                 autoDensity: true,
                 resolution: window.devicePixelRatio || 1,

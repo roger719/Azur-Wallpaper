@@ -202,6 +202,11 @@ fun Live2DWebView(
                 settings.mediaPlaybackRequiresUserGesture = false
                 settings.cacheMode = WebSettings.LOAD_DEFAULT
                 settings.loadsImagesAutomatically = true
+                settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                @Suppress("DEPRECATION")
+                settings.allowFileAccessFromFileURLs = true
+                @Suppress("DEPRECATION")
+                settings.allowUniversalAccessFromFileURLs = true
                 overScrollMode = View.OVER_SCROLL_NEVER
                 isNestedScrollingEnabled = false
                 setBackgroundColor(AndroidColor.TRANSPARENT)

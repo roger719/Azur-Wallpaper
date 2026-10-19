@@ -36,6 +36,7 @@ import android.view.WindowManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
@@ -393,6 +394,9 @@ class WaifuSpineWallpaperService : WallpaperService() {
                         settings.allowContentAccess = true
                         settings.domStorageEnabled = true
                         settings.mediaPlaybackRequiresUserGesture = false
+                        settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        settings.allowFileAccessFromFileURLs = true
+                        settings.allowUniversalAccessFromFileURLs = true
                         setBackgroundColor(AndroidColor.TRANSPARENT)
                         setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
