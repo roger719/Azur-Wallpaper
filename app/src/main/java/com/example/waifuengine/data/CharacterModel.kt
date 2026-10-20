@@ -61,29 +61,26 @@ object CharacterRepository {
         }
         if (hasDirectLive2D) return true
 
-        // Cas d'un dossier avec display_name.txt contenant un sous-dossier de modèle
+        // Cas d'un dossier avec display_name.txt (dossier personnage créé à l'import ZIP ou au téléchargement Workshop)
         if (File(dir, "display_name.txt").exists()) {
-            val subDirs = files.filter { it.isDirectory && !it.name.startsWith(".") }
-            if (subDirs.any { isLive2DDirectory(it) }) {
-                return true
-            }
-        }
-
-        // Détection récursive pour dossiers avec structure imbriquée
-        if (!isSpineDirectory(dir)) {
-            val hasNestedLive2D = dir.walkTopDown().maxDepth(3).any {
-                it.isFile && (
-                    it.name.endsWith(".moc3", ignoreCase = true) ||
-                    it.name.endsWith(".model3.json", ignoreCase = true) ||
-                    it.name.endsWith(".model.json", ignoreCase = true) ||
-                    it.name.endsWith(".moc", ignoreCase = true)
-                )
-            }
-            if (hasNestedLive2D) {
-                val mocCount = dir.walkTopDown().maxDepth(3).count {
-                    it.isFile && (it.name.endsWith(".moc3", ignoreCase = true) || it.name.endsWith(".model3.json", ignoreCase = true))
+            if (!isSpineDirectory(dir)) {
+                val subDirs = files.filter { it.isDirectory && !it.name.startsWith(".") }
+                val skinSubDirs = subDirs.filter { isLive2DDirectory(it) || isSpineDirectory(it) }
+                // Si le dossier contient plusieurs personnages distincts en sous-dossiers, c'est un conteneur
+                if (skinSubDirs.size > 1) {
+                    return false
                 }
-                if (mocCount in 1..4) return true
+                val hasNestedLive2D = dir.walkTopDown().maxDepth(4).any {
+                    it.isFile && (
+                        it.name.endsWith(".moc3", ignoreCase = true) ||
+                        it.name.endsWith(".model3.json", ignoreCase = true) ||
+                        it.name.endsWith(".model.json", ignoreCase = true) ||
+                        it.name.endsWith(".moc", ignoreCase = true)
+                    )
+                }
+                if (hasNestedLive2D) {
+                    return true
+                }
             }
         }
 

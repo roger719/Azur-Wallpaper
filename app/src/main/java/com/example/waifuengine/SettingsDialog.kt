@@ -145,14 +145,6 @@ fun SettingsDialog(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Text(
-                                    text = "🇫🇷",
-                                    fontSize = 18.sp
-                                )
                                 Column {
                                     Text(
                                         text = strings.french,
@@ -167,7 +159,6 @@ fun SettingsDialog(
                                         color = if (isFr) Color(0xFFD0D0D5) else nothingTextSecondary
                                     )
                                 }
-                            }
 
                             if (isFr) {
                                 Surface(
@@ -207,14 +198,6 @@ fun SettingsDialog(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Text(
-                                    text = "🇬🇧",
-                                    fontSize = 18.sp
-                                )
                                 Column {
                                     Text(
                                         text = strings.english,
@@ -229,7 +212,6 @@ fun SettingsDialog(
                                         color = if (isEn) Color(0xFFD0D0D5) else nothingTextSecondary
                                     )
                                 }
-                            }
 
                             if (isEn) {
                                 Surface(
