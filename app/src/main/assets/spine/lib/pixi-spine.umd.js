@@ -602,7 +602,7 @@ this.PIXI.spine = this.PIXI.spine || {};
                             }
                             page.baseTexture = texture;
                             //TODO: set scaleMode and mipmapMode from spine
-                            if (page.pma !== false) {
+                            if (page.pma) {
                                 texture.alphaMode = constants.ALPHA_MODES.PMA;
                             }
                             if (!texture.valid) {

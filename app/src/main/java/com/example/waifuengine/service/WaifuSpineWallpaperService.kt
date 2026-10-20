@@ -200,7 +200,7 @@ class WaifuSpineWallpaperService : WallpaperService() {
                 if (targetModelUrl.isNotEmpty()) {
                     val quotedModel = JSONObject.quote(targetModelUrl)
                     val quotedAtlas = if (targetAtlasUrl.isNotEmpty()) JSONObject.quote(targetAtlasUrl) else "null"
-                    wv.evaluateJavascript("loadModelFromAndroid($quotedModel, $quotedAtlas)", null)
+                    wv.evaluateJavascript("loadModelFromAndroid($quotedModel, $quotedAtlas, ${prefs.isSpinePma})", null)
                     wv.evaluateJavascript("setIdleAnimation(${JSONObject.quote(prefs.idleAnimation)})", null)
                     wv.evaluateJavascript("setCustomScale(${prefs.scale})", null)
                     wv.evaluateJavascript("setCustomOffset(${prefs.offsetX}, ${prefs.offsetY})", null)
@@ -301,8 +301,6 @@ class WaifuSpineWallpaperService : WallpaperService() {
                     if (customClickAnim.isNotBlank() && !customClickAnim.equals("NONE", ignoreCase = true)) {
                         val cleanList = customClickAnim.replace("'", "\\'")
                         webView?.evaluateJavascript("playNamedAnimation('$cleanList')", null)
-                    } else {
-                        webView?.evaluateJavascript("playActionAnimation()", null)
                     }
                 }
             }
@@ -880,6 +878,9 @@ class WaifuSpineWallpaperService : WallpaperService() {
                 }
                 key == WaifuPreferences.KEY_IDLE_ANIM -> {
                     webView?.evaluateJavascript("setIdleAnimation(${JSONObject.quote(prefs.idleAnimation)})", null)
+                }
+                key == WaifuPreferences.KEY_SPINE_PMA -> {
+                    webView?.evaluateJavascript("setPmaMode(${prefs.isSpinePma})", null)
                 }
                 key in listOf(
                     WaifuPreferences.KEY_BG_TYPE,

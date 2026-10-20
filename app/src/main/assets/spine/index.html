@@ -160,22 +160,8 @@
         }
 
         function playActionAnimation() {
-            if (!model || !model.state || !model.state.data || !model.state.data.skeletonData) return;
-            const anims = model.state.data.skeletonData.animations;
-            if (!anims || anims.length === 0) return;
-
-            const actionAnim = anims.find(a => {
-                const n = a.name.toLowerCase();
-                return n.includes("touch") || n.includes("tap") || n.includes("action") || n.includes("click") || n.includes("attack");
-            });
-
-            if (actionAnim) {
-                playNamedAnimation(actionAnim.name);
-            } else if (anims.length > 1) {
-                const nonIdle = anims.filter(a => !a.name.toLowerCase().includes("idle"));
-                const chosen = nonIdle.length > 0 ? nonIdle[Math.floor(Math.random() * nonIdle.length)] : anims[0];
-                playNamedAnimation(chosen.name);
-            }
+            // When no specific animation is configured, do not play any animation.
+            return;
         }
 
         function fitModel() {
@@ -231,7 +217,11 @@
             }
         }
 
-        function loadModelFromAndroid(modelPath, atlasPath) {
+        let currentPmaMode = false;
+        let pendingPmaMode = false;
+
+        function loadModelFromAndroid(modelPath, atlasPath, isPma) {
+            currentPmaMode = (isPma === true || isPma === "true" || isPma === 1);
             if (!modelPath) return;
             if (!modelPath.startsWith("file://") && !modelPath.startsWith("http")) {
                 modelPath = "file://" + modelPath;
@@ -249,18 +239,33 @@
                 return;
             }
             currentlyLoadingPath = modelPath;
+            currentAtlasPath = atlasPath;
             if (!app) {
                 pendingModelPath = modelPath;
                 pendingAtlasPath = atlasPath;
+                pendingPmaMode = currentPmaMode;
                 init();
                 return;
             }
-            loadSpineModel(modelPath, atlasPath);
+            loadSpineModel(modelPath, atlasPath, currentPmaMode);
+        }
+
+        function setPmaMode(isPma) {
+            const pma = (isPma === true || isPma === "true" || isPma === 1);
+            if (pma === currentPmaMode) return;
+            currentPmaMode = pma;
+            if (currentLoadedPath) {
+                const targetModel = currentLoadedPath;
+                const targetAtlas = currentAtlasPath;
+                currentLoadedPath = null;
+                currentlyLoadingPath = null;
+                loadModelFromAndroid(targetModel, targetAtlas, currentPmaMode);
+            }
         }
 
         let currentLoader = null;
 
-        function loadSpineModel(modelPath, atlasPath) {
+        function loadSpineModel(modelPath, atlasPath, isPma) {
             const token = ++loadToken;
             const loaderKey = "spine_model_" + token;
 
@@ -275,12 +280,13 @@
             currentLoader = loader;
 
             const options = {
-                metadata: {
-                    imageMetadata: {
-                        alphaMode: PIXI.ALPHA_MODES.PMA
-                    }
-                }
+                metadata: {}
             };
+            if (isPma) {
+                options.metadata.imageMetadata = {
+                    alphaMode: PIXI.ALPHA_MODES.PMA
+                };
+            }
             if (atlasPath) {
                 options.metadata.spineAtlasFile = atlasPath;
             }
@@ -311,21 +317,26 @@
                 }
 
                 try {
-                    // Fix PMA / Straight alpha mismatch:
-                    // Spine textures default to Premultiplied Alpha on export.
-                    // When .atlas omits 'pma: true' (as in Project QT, Arknights, older Spine),
-                    // ensuring PMA prevents WebGL from multiplying alpha a second time on upload.
+                    // Respect explicit atlas pma flag if present; otherwise use the requested isPma mode
                     if (res.spineAtlas && res.spineAtlas.pages) {
                         res.spineAtlas.pages.forEach(page => {
-                            if (page.baseTexture && page.pma !== false) {
-                                page.baseTexture.alphaMode = PIXI.ALPHA_MODES.PMA;
+                            if (page.baseTexture) {
+                                if (page.pma === true) {
+                                    page.baseTexture.alphaMode = PIXI.ALPHA_MODES.PMA;
+                                } else if (page.pma === false) {
+                                    page.baseTexture.alphaMode = PIXI.ALPHA_MODES.UNPACK;
+                                } else if (isPma) {
+                                    page.baseTexture.alphaMode = PIXI.ALPHA_MODES.PMA;
+                                } else {
+                                    page.baseTexture.alphaMode = PIXI.ALPHA_MODES.UNPACK;
+                                }
                             }
                         });
                     }
-                    if (res.spineData && res.spineData.images) {
+                    if (res.spineData && res.spineData.images && isPma) {
                         for (const key in res.spineData.images) {
                             const tex = res.spineData.images[key];
-                            if (tex && tex.baseTexture && tex.baseTexture.alphaMode !== PIXI.ALPHA_MODES.PMA) {
+                            if (tex && tex.baseTexture) {
                                 tex.baseTexture.alphaMode = PIXI.ALPHA_MODES.PMA;
                             }
                         }
@@ -475,9 +486,11 @@
             if (pendingModelPath) {
                 const pendingModel = pendingModelPath;
                 const pendingAtlas = pendingAtlasPath;
+                const pendingPma = pendingPmaMode;
                 pendingModelPath = null;
                 pendingAtlasPath = null;
-                loadSpineModel(pendingModel, pendingAtlas);
+                pendingPmaMode = false;
+                loadSpineModel(pendingModel, pendingAtlas, pendingPma);
             }
         }
 
@@ -510,6 +523,7 @@
         window.setPointerTrackingEnabled = setPointerTrackingEnabled;
         window.setModelVisible = setModelVisible;
         window.setIdleAnimation = setIdleAnimation;
+        window.setPmaMode = setPmaMode;
         window.playActionAnimation = playActionAnimation;
         window.playNamedAnimation = playNamedAnimation;
         window.pauseRendering = pauseRendering;

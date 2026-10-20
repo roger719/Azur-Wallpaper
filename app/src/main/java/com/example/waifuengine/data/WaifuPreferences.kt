@@ -59,6 +59,7 @@ data class PresetItem(
     val clockOffsetY: Float = -350f,
     val engineType: String = WaifuPreferences.ENGINE_LIVE2D,
     val spineAtlasPath: String = "",
+    val isSpinePma: Boolean = false,
 )
 
 class WaifuPreferences(private val context: Context) {
@@ -75,6 +76,10 @@ class WaifuPreferences(private val context: Context) {
     var spineAtlasPath: String
         get() = prefs.getString(KEY_SPINE_ATLAS, "") ?: ""
         set(value) = prefs.edit { putString(KEY_SPINE_ATLAS, value) }
+
+    var isSpinePma: Boolean
+        get() = prefs.getBoolean(KEY_SPINE_PMA, false)
+        set(value) = prefs.edit { putBoolean(KEY_SPINE_PMA, value) }
 
     var scale: Float
         get() = prefs.getFloat(KEY_SCALE, 1.0f)
@@ -353,7 +358,8 @@ class WaifuPreferences(private val context: Context) {
                         clockOffsetX = obj.optDouble("clockOffsetX", 0.0).toFloat(),
                         clockOffsetY = obj.optDouble("clockOffsetY", -350.0).toFloat(),
                         engineType = obj.optString("engineType", ENGINE_LIVE2D),
-                        spineAtlasPath = obj.optString("spineAtlasPath", "")
+                        spineAtlasPath = obj.optString("spineAtlasPath", ""),
+                        isSpinePma = obj.optBoolean("isSpinePma", false)
                     )
                 )
             }
@@ -370,6 +376,7 @@ class WaifuPreferences(private val context: Context) {
                 put("skelPath", item.skelPath)
                 put("engineType", item.engineType)
                 put("spineAtlasPath", item.spineAtlasPath)
+                put("isSpinePma", item.isSpinePma)
                 put("scale", item.scale)
                 put("offsetX", item.offsetX)
                 put("offsetY", item.offsetY)
@@ -467,6 +474,7 @@ class WaifuPreferences(private val context: Context) {
         const val KEY_SKEL = "key_skel"
         const val KEY_ENGINE_TYPE = "key_engine_type"
         const val KEY_SPINE_ATLAS = "key_spine_atlas"
+        const val KEY_SPINE_PMA = "key_spine_pma"
         const val ENGINE_LIVE2D = "LIVE2D"
         const val ENGINE_SPINE = "SPINE"
         const val KEY_SCALE = "key_scale"

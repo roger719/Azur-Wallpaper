@@ -85,6 +85,8 @@ fun SpineWebView(
     offsetX: Float = 0f,
     offsetY: Float = 0f,
     idleAnimation: String = "DEFAULT",
+    clickAnimation: String = "",
+    isPma: Boolean = false,
     isPointerTrackingEnabled: Boolean = true,
     doubleTapTrigger: Int = 0,
     cornerRadiusPx: Float = 0f,
@@ -162,17 +164,25 @@ fun SpineWebView(
     }
 
     // Chargement du modèle Spine
-    LaunchedEffect(targetModelUrl, targetAtlasUrl, isActive, isEngineReady, webViewRef) {
+    LaunchedEffect(targetModelUrl, targetAtlasUrl, isPma, isActive, isEngineReady, webViewRef) {
         val view = webViewRef ?: return@LaunchedEffect
         if (!isEngineReady || !isActive || targetModelUrl.isEmpty()) return@LaunchedEffect
         enforceStatusBarHidden()
         val quotedModel = JSONObject.quote(targetModelUrl)
         val quotedAtlas = if (targetAtlasUrl.isNotEmpty()) JSONObject.quote(targetAtlasUrl) else "null"
-        view.evaluateJavascript("loadModelFromAndroid($quotedModel, $quotedAtlas)", null)
+        view.evaluateJavascript("loadModelFromAndroid($quotedModel, $quotedAtlas, $isPma)", null)
         val quotedIdle = JSONObject.quote(idleAnimation)
         view.evaluateJavascript("setIdleAnimation($quotedIdle)", null)
         applyTransform(view)
         view.evaluateJavascript("resizeToContainer()", null)
+    }
+
+    // Basculement dynamique du mode PMA
+    LaunchedEffect(isPma, isActive, isEngineReady, webViewRef) {
+        val view = webViewRef ?: return@LaunchedEffect
+        if (isEngineReady && isActive) {
+            view.evaluateJavascript("setPmaMode($isPma)", null)
+        }
     }
 
     // Changement de l'animation au repos (idle)
@@ -191,10 +201,13 @@ fun SpineWebView(
         }
     }
 
-    // Déclenchement de l'animation lors du double-tap
+    // Déclenchement de l'animation lors du double-tap (uniquement si une animation est définie)
     LaunchedEffect(doubleTapTrigger) {
         if (isEngineReady && isActive && doubleTapTrigger > 0) {
-            webViewRef?.evaluateJavascript("playActionAnimation()", null)
+            if (clickAnimation.isNotBlank() && !clickAnimation.equals("NONE", ignoreCase = true)) {
+                val quotedClick = JSONObject.quote(clickAnimation)
+                webViewRef?.evaluateJavascript("playNamedAnimation($quotedClick)", null)
+            }
         }
     }
 

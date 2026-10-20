@@ -44,7 +44,9 @@ class AppStrings(val lang: String) {
     val languageDescription: String get() = if (isEn) "Select interface display language" else "Sélectionnez la langue d'affichage"
     val french: String get() = "Français"
     val english: String get() = "English"
-    val appVersion: String get() = "Version 1.6.5"
+    val appVersion: String get() = "Version 2.0"
+    val changelogTitle: String get() = if (isEn) "CHANGELOG" else "JOURNAL DES VERSIONS"
+    val changelogSubtitle: String get() = if (isEn) "Version history & modifications" else "Historique des versions et modifications"
 
     // Files Dialog
     val fileExplorer: String get() = if (isEn) "FILE EXPLORER" else "EXPLORATEUR DE FICHIERS"
@@ -111,6 +113,8 @@ class AppStrings(val lang: String) {
     val clickAnimationLabel: String get() = if (isEn) "Touch Animation (Tap / Click):" else "Animation au toucher (Clic / Tap) :"
     val clickAnimationSubtitle: String get() = if (isEn) "Select one or more animations (random on tap)" else "Sélectionnez une ou plusieurs animations (choix aléatoire lors du toucher)"
     val animationNone: String get() = if (isEn) "None (Disabled)" else "Aucune (Désactivée)"
+    val spinePmaLabel: String get() = if (isEn) "PMA Mode (Premultiplied Alpha)" else "Mode Alpha PMA (Premultiplié)"
+    val spinePmaSubtitle: String get() = if (isEn) "Fixes grey outlines or muddy transparency on older models (e.g. Project QT)" else "Corrige les contours grisés ou la transparence terne (ex : Project QT)"
 
     // Clock & Schedule
     val digitalClockLabel: String get() = if (isEn) "Digital Clock:" else "Horloge numérique :"
