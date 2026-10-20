@@ -302,7 +302,7 @@ object WorkshopManager {
                     "arknights", "arknight" -> "Arknights"
                     "nikke" -> "NIKKE"
                     "browndust2", "browndust" -> "Brown Dust 2"
-                    "azurelane", "azurlane" -> "Azure Lane"
+                    "azurelane", "azurlane" -> "Azur Lane"
                     "bluearchive" -> "Blue Archive"
                     "genshin", "genshinimpact" -> "Genshin Impact"
                     "honkai", "honkaistarrail" -> "Honkai: Star Rail"

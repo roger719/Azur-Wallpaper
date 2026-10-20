@@ -452,10 +452,6 @@ fun WorkshopDialog(
     }
 
     fun downloadModel(model: WorkshopModel) {
-        if (model.engine == EngineType.LIVE2D && model.files.any { it.path.contains("Live2Ddatabase/AzureLane") }) {
-            Toast.makeText(context, strings.unityBundleNotSupported, Toast.LENGTH_LONG).show()
-            return
-        }
         coroutineScope.launch {
             downloadingModelId = model.id
             downloadProgress = 0f
