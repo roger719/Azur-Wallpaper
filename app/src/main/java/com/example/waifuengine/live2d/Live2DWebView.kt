@@ -30,6 +30,8 @@ import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewAssetLoader.AssetsPathHandler
 import androidx.webkit.WebViewAssetLoader.InternalStoragePathHandler
 import org.json.JSONObject
+import com.example.waifuengine.data.WaifuPreferences
+import com.example.waifuengine.spine.SpineModelHelper
 import java.io.File
 import java.io.FileInputStream
 
@@ -94,6 +96,7 @@ fun Live2DWebView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val prefs = remember { WaifuPreferences(context) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var isEngineReady by remember { mutableStateOf(false) }
@@ -120,7 +123,6 @@ fun Live2DWebView(
             WebViewAssetLoader.Builder()
                 .setDomain("appassets.androidview.local")
                 .addPathHandler("/assets/", AssetsPathHandler(context))
-                .addPathHandler("/files/", InternalStoragePathHandler(context, context.filesDir))
                 .build()
         } catch (_: Exception) {
             null
@@ -164,11 +166,20 @@ fun Live2DWebView(
         if (!isEngineReady || !isActive || targetUrl.isEmpty()) return@LaunchedEffect
         enforceStatusBarHidden()
         val quotedPath = JSONObject.quote(targetUrl)
-        view.evaluateJavascript("loadModelFromAndroid($quotedPath)", null)
+        val shouldPma = prefs.isSpinePma || SpineModelHelper.shouldEnablePma(modelJsonPath, "")
+        view.evaluateJavascript("loadModelFromAndroid($quotedPath, $shouldPma)", null)
         val quotedIdle = JSONObject.quote(idleAnimation)
         view.evaluateJavascript("setIdleAnimation($quotedIdle)", null)
         applyTransform(view)
         view.evaluateJavascript("resizeToContainer()", null)
+    }
+
+    LaunchedEffect(prefs.isSpinePma, isEngineReady, webViewRef) {
+        val view = webViewRef ?: return@LaunchedEffect
+        if (isEngineReady && isActive) {
+            val shouldPma = prefs.isSpinePma || SpineModelHelper.shouldEnablePma(modelJsonPath, "")
+            view.evaluateJavascript("setPmaMode($shouldPma)", null)
+        }
     }
 
     // Changement de l'animation au repos (idle)
@@ -198,6 +209,13 @@ fun Live2DWebView(
     LaunchedEffect(isAnimating) {
         if (!isAnimating && isEngineReady && webViewRef != null && isActive) {
             webViewRef?.evaluateJavascript("resizeToContainer()", null)
+        }
+    }
+
+    LaunchedEffect(prefs.fpsLimit, isEngineReady, webViewRef) {
+        val view = webViewRef ?: return@LaunchedEffect
+        if (isEngineReady && isActive) {
+            view.evaluateJavascript("setTargetFps(${prefs.fpsLimit})", null)
         }
     }
 
@@ -333,7 +351,7 @@ fun Live2DWebView(
                     }
                 }
 
-                loadUrl("https://appassets.androidview.local/assets/live2d/index.html")
+                loadUrl("https://appassets.androidview.local/assets/live2d/index.html?fps=${prefs.fpsLimit}&antialias=${prefs.isAntialiasEnabled}&scale=${prefs.renderScale}")
             }
         },
         update = { view ->

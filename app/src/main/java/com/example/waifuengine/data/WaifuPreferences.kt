@@ -81,6 +81,18 @@ class WaifuPreferences(private val context: Context) {
         get() = prefs.getBoolean(KEY_SPINE_PMA, false)
         set(value) = prefs.edit { putBoolean(KEY_SPINE_PMA, value) }
 
+    var fpsLimit: Int
+        get() = prefs.getInt(KEY_FPS_LIMIT, 60)
+        set(value) = prefs.edit { putInt(KEY_FPS_LIMIT, value) }
+
+    var isAntialiasEnabled: Boolean
+        get() = prefs.getBoolean(KEY_ANTIALIAS, true)
+        set(value) = prefs.edit { putBoolean(KEY_ANTIALIAS, value) }
+
+    var renderScale: Float
+        get() = prefs.getFloat(KEY_RENDER_SCALE, 1.0f)
+        set(value) = prefs.edit { putFloat(KEY_RENDER_SCALE, value) }
+
     var scale: Float
         get() = prefs.getFloat(KEY_SCALE, 1.0f)
         set(value) = prefs.edit { putFloat(KEY_SCALE, value) }
@@ -503,6 +515,9 @@ class WaifuPreferences(private val context: Context) {
         const val KEY_WORKSHOP_REPO_URL = "key_workshop_repo_url"
         const val KEY_WORKSHOP_GITHUB_TOKEN = "key_workshop_github_token"
         const val KEY_APP_LANGUAGE = "key_app_language"
+        const val KEY_FPS_LIMIT = "key_fps_limit"
+        const val KEY_ANTIALIAS = "key_antialias"
+        const val KEY_RENDER_SCALE = "key_render_scale"
         const val LANGUAGE_FR = "fr"
         const val LANGUAGE_EN = "en"
 

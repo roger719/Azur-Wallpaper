@@ -30,6 +30,46 @@
         let currentLoadedPath = null;
         let currentExpression = "";
 
+        const urlParams = new URLSearchParams(window.location.search);
+        let currentTargetFps = 60;
+        const paramFps = parseInt(urlParams.get("fps"));
+        if (!isNaN(paramFps)) currentTargetFps = paramFps;
+        const currentAntialias = urlParams.get("antialias") !== "false";
+        let currentRenderScale = parseFloat(urlParams.get("scale")) || 1.0;
+        if (isNaN(currentRenderScale) || currentRenderScale <= 0) currentRenderScale = 1.0;
+
+        function setTargetFps(fps) {
+            currentTargetFps = parseInt(fps);
+            if (isNaN(currentTargetFps)) currentTargetFps = 0;
+            if (app && app.ticker) {
+                app.ticker.maxFPS = currentTargetFps > 0 ? currentTargetFps : 0;
+            }
+        }
+        window.setTargetFps = setTargetFps;
+
+        let currentPmaMode = false;
+        function setPmaMode(isPma) {
+            currentPmaMode = (isPma === true || isPma === "true" || isPma === 1);
+            applyPmaToModel();
+        }
+        function applyPmaToModel() {
+            if (!model) return;
+            try {
+                const targetAlpha = currentPmaMode ? PIXI.ALPHA_MODES.PMA : PIXI.ALPHA_MODES.UNPACK;
+                if (model.textures && Array.isArray(model.textures)) {
+                    model.textures.forEach(tex => {
+                        if (tex && tex.baseTexture) {
+                            tex.baseTexture.alphaMode = targetAlpha;
+                            tex.baseTexture.update();
+                        }
+                    });
+                }
+            } catch (e) {
+                console.warn("Live2D applyPmaToModel error:", e);
+            }
+        }
+        window.setPmaMode = setPmaMode;
+
         let customScale = 1.0;
         let customOffsetX = 0.0;
         let customOffsetY = 0.0;
@@ -105,12 +145,24 @@
             } catch (e) {}
         }
 
-        function loadModelFromAndroid(jsonPath) {
+        function loadModelFromAndroid(jsonPath, isPma) {
             if (!jsonPath) return;
+            if (isPma !== undefined) {
+                currentPmaMode = (isPma === true || isPma === "true" || isPma === 1);
+            }
+            if (!currentPmaMode && jsonPath) {
+                const pLower = String(jsonPath).toLowerCase();
+                if (pLower.includes("project qt") || pLower.includes("projectqt") || 
+                    pLower.includes("bikini%20girls") || pLower.includes("bikini girls") ||
+                    pLower.includes("bikinigirls") || pLower.includes("nutaku")) {
+                    currentPmaMode = true;
+                }
+            }
             if (!jsonPath.startsWith("file://") && !jsonPath.startsWith("http")) {
                 jsonPath = "file://" + jsonPath;
             }
             if (jsonPath === currentLoadedPath && model) {
+                applyPmaToModel();
                 if (currentExpression) {
                     setExpression(currentExpression);
                 }
@@ -244,6 +296,7 @@
             currentLoadedPath = path;
             currentlyLoadingPath = null;
             app.stage.addChild(model);
+            applyPmaToModel();
 
             fitModel();
             setupMotions(model);
@@ -481,6 +534,8 @@
 
             isInitialized = true;
 
+            const dpr = (window.devicePixelRatio || 1) * currentRenderScale;
+
             app = new PIXI.Application({
                 width: initW,
                 height: initH,
@@ -488,11 +543,15 @@
                 backgroundAlpha: 0,
                 clearBeforeRender: true,
                 preserveDrawingBuffer: true,
-                antialias: true,
+                antialias: currentAntialias,
                 autoDensity: true,
-                resolution: window.devicePixelRatio || 1,
+                resolution: dpr,
                 sharedTicker: false
             });
+
+            if (app.ticker && currentTargetFps > 0) {
+                app.ticker.maxFPS = currentTargetFps;
+            }
             if (app.renderer && app.renderer.background) {
                 app.renderer.background.alpha = 0;
             }

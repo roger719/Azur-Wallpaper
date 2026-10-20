@@ -51,6 +51,34 @@ object SpineModelHelper {
             !lower.endsWith(".moc")
     }
 
+    fun shouldEnablePma(modelPath: String, atlasPath: String = ""): Boolean {
+        if (modelPath.isEmpty()) return false
+        val lower = modelPath.lowercase()
+        if (lower.contains("project qt") || lower.contains("projectqt") ||
+            lower.contains("bikini girls") || lower.contains("bikini%20girls") ||
+            lower.contains("bikinigirls") || lower.contains("nutaku")) {
+            return true
+        }
+        val atlasFile = if (atlasPath.isNotEmpty() && File(atlasPath).exists()) {
+            File(atlasPath)
+        } else {
+            val parent = File(modelPath).parentFile
+            if (parent != null) findAtlasFile(parent) else null
+        }
+        if (atlasFile != null && atlasFile.exists()) {
+            try {
+                atlasFile.useLines { lines ->
+                    for (line in lines) {
+                        val trimmed = line.trim().lowercase()
+                        if (trimmed == "pma: true" || trimmed == "pma:true") return true
+                        if (trimmed == "pma: false" || trimmed == "pma:false") return false
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        return false
+    }
+
     fun findSkelOrJsonFile(dir: File): File? {
         val files = dir.walkTopDown().filter { it.isFile }.toList()
         return files.firstOrNull { it.name.endsWith(".skel", ignoreCase = true) }

@@ -221,6 +221,23 @@
             }
         }
 
+        const urlParams = new URLSearchParams(window.location.search);
+        let currentTargetFps = 60;
+        const paramFps = parseInt(urlParams.get("fps"));
+        if (!isNaN(paramFps)) currentTargetFps = paramFps;
+        const currentAntialias = urlParams.get("antialias") !== "false";
+        let currentRenderScale = parseFloat(urlParams.get("scale")) || 1.0;
+        if (isNaN(currentRenderScale) || currentRenderScale <= 0) currentRenderScale = 1.0;
+
+        function setTargetFps(fps) {
+            currentTargetFps = parseInt(fps);
+            if (isNaN(currentTargetFps)) currentTargetFps = 0;
+            if (app && app.ticker) {
+                app.ticker.maxFPS = currentTargetFps > 0 ? currentTargetFps : 0;
+            }
+        }
+        window.setTargetFps = setTargetFps;
+
         let currentPmaMode = false;
         let pendingPmaMode = false;
 
@@ -228,7 +245,9 @@
             let effectivePma = (isPma === true || isPma === "true" || isPma === 1);
             if (!effectivePma && modelPath) {
                 const pLower = String(modelPath).toLowerCase();
-                if (pLower.includes("project qt") || pLower.includes("projectqt") || pLower.includes("bikini%20girls")) {
+                if (pLower.includes("project qt") || pLower.includes("projectqt") || 
+                    pLower.includes("bikini%20girls") || pLower.includes("bikini girls") ||
+                    pLower.includes("bikinigirls") || pLower.includes("nutaku")) {
                     effectivePma = true;
                 }
             }
@@ -265,7 +284,9 @@
             let effectivePma = (isPma === true || isPma === "true" || isPma === 1);
             if (!effectivePma && currentLoadedPath) {
                 const pLower = String(currentLoadedPath).toLowerCase();
-                if (pLower.includes("project qt") || pLower.includes("projectqt") || pLower.includes("bikini%20girls")) {
+                if (pLower.includes("project qt") || pLower.includes("projectqt") || 
+                    pLower.includes("bikini%20girls") || pLower.includes("bikini girls") ||
+                    pLower.includes("bikinigirls") || pLower.includes("nutaku")) {
                     effectivePma = true;
                 }
             }
@@ -476,6 +497,8 @@
 
             isInitialized = true;
 
+            const dpr = (window.devicePixelRatio || 1) * currentRenderScale;
+
             app = new PIXI.Application({
                 width: initW,
                 height: initH,
@@ -483,11 +506,15 @@
                 backgroundAlpha: 0,
                 clearBeforeRender: true,
                 preserveDrawingBuffer: true,
-                antialias: true,
+                antialias: currentAntialias,
                 autoDensity: true,
-                resolution: window.devicePixelRatio || 1,
+                resolution: dpr,
                 sharedTicker: false
             });
+
+            if (app.ticker && currentTargetFps > 0) {
+                app.ticker.maxFPS = currentTargetFps;
+            }
 
             if (app.renderer && app.renderer.background) {
                 app.renderer.background.alpha = 0;

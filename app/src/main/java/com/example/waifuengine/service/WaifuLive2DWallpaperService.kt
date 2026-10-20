@@ -201,23 +201,27 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 if (targetModelUrlSpine.isNotEmpty()) {
                     val quotedModel = JSONObject.quote(targetModelUrlSpine)
                     val quotedAtlas = if (targetAtlasUrlSpine.isNotEmpty()) JSONObject.quote(targetAtlasUrlSpine) else "null"
-                    val isProjectQt = prefs.skelPath.contains("Project QT", ignoreCase = true) || prefs.skelPath.contains("projectqt", ignoreCase = true)
-                    val effectivePma = prefs.isSpinePma || isProjectQt
+                    val isAutoPma = SpineModelHelper.shouldEnablePma(prefs.skelPath, prefs.spineAtlasPath)
+                    val effectivePma = prefs.isSpinePma || isAutoPma
                     wv.evaluateJavascript("loadModelFromAndroid($quotedModel, $quotedAtlas, $effectivePma)", null)
                     wv.evaluateJavascript("setIdleAnimation(${JSONObject.quote(prefs.idleAnimation)})", null)
                     wv.evaluateJavascript("setCustomScale(${prefs.scale})", null)
                     wv.evaluateJavascript("setCustomOffset(${prefs.offsetX}, ${prefs.offsetY})", null)
                     wv.evaluateJavascript("setPointerTrackingEnabled(${prefs.isPointerTrackingEnabled})", null)
+                    wv.evaluateJavascript("setTargetFps(${prefs.fpsLimit})", null)
                     wv.evaluateJavascript("setModelVisible(${!pauseActive})", null)
                 }
             } else {
                 if (targetUrl.isNotEmpty()) {
                     val quotedPath = JSONObject.quote(targetUrl)
-                    wv.evaluateJavascript("loadModelFromAndroid($quotedPath)", null)
+                    val isAutoPma = SpineModelHelper.shouldEnablePma(prefs.skelPath, "")
+                    val effectivePma = prefs.isSpinePma || isAutoPma
+                    wv.evaluateJavascript("loadModelFromAndroid($quotedPath, $effectivePma)", null)
                     wv.evaluateJavascript("setIdleAnimation(${JSONObject.quote(prefs.idleAnimation)})", null)
                     wv.evaluateJavascript("setCustomScale(${prefs.scale})", null)
                     wv.evaluateJavascript("setCustomOffset(${prefs.offsetX}, ${prefs.offsetY})", null)
                     wv.evaluateJavascript("setPointerTrackingEnabled(${prefs.isPointerTrackingEnabled})", null)
+                    wv.evaluateJavascript("setTargetFps(${prefs.fpsLimit})", null)
                     wv.evaluateJavascript("setModelVisible(${!pauseActive})", null)
                 }
             }
@@ -229,10 +233,11 @@ class WaifuLive2DWallpaperService : WallpaperService() {
             if (currentLoadedEngine != neededEngine) {
                 currentLoadedEngine = neededEngine
                 isEngineReady = false
+                val queryParams = "fps=${prefs.fpsLimit}&antialias=${prefs.isAntialiasEnabled}&scale=${prefs.renderScale}"
                 val url = if (neededEngine == WaifuPreferences.ENGINE_SPINE) {
-                    "https://appassets.androidview.local/assets/spine/index.html"
+                    "https://appassets.androidview.local/assets/spine/index.html?$queryParams"
                 } else {
-                    "https://appassets.androidview.local/assets/live2d/index.html"
+                    "https://appassets.androidview.local/assets/live2d/index.html?$queryParams"
                 }
                 wv.loadUrl(url)
             } else if (forceReloadModel) {
@@ -485,10 +490,11 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                         }
                         val initialEngine = if (isCurrentModelSpine()) WaifuPreferences.ENGINE_SPINE else WaifuPreferences.ENGINE_LIVE2D
                         currentLoadedEngine = initialEngine
+                        val queryParams = "fps=${prefs.fpsLimit}&antialias=${prefs.isAntialiasEnabled}&scale=${prefs.renderScale}"
                         val initialUrl = if (initialEngine == WaifuPreferences.ENGINE_SPINE) {
-                            "https://appassets.androidview.local/assets/spine/index.html"
+                            "https://appassets.androidview.local/assets/spine/index.html?$queryParams"
                         } else {
-                            "https://appassets.androidview.local/assets/live2d/index.html"
+                            "https://appassets.androidview.local/assets/live2d/index.html?$queryParams"
                         }
                         loadUrl(initialUrl)
                     }
@@ -796,23 +802,17 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 if (prefs.isMusicEnabled || prefs.isRagebaitEnabled) {
                     val musicPath = prefs.musicPath
                     val hasCustomMusic = musicPath.isNotEmpty() && File(musicPath).exists()
-
-                    musicPlayer = MediaPlayer().apply {
-                        if (hasCustomMusic) {
+                    if (hasCustomMusic) {
+                        musicPlayer = MediaPlayer().apply {
                             setDataSource(musicPath)
-                        } else {
-                            val afd = assets.openFd("rickroll.mp3")
-                            setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
-                            afd.close()
+                            isLooping = true
+                            val vol = prefs.musicVolume
+                            setVolume(vol, vol)
+                            setOnPreparedListener { mp ->
+                                syncAudioAndVideoState()
+                            }
+                            prepareAsync()
                         }
-
-                        isLooping = true
-                        val vol = prefs.musicVolume
-                        setVolume(vol, vol)
-                        setOnPreparedListener { mp ->
-                            syncAudioAndVideoState()
-                        }
-                        prepareAsync()
                     }
                 }
             } catch (e: Exception) {
@@ -926,9 +926,16 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                     webView?.evaluateJavascript("setIdleAnimation(${JSONObject.quote(prefs.idleAnimation)})", null)
                 }
                 key == WaifuPreferences.KEY_SPINE_PMA -> {
-                    val isProjectQt = prefs.skelPath.contains("Project QT", ignoreCase = true) || prefs.skelPath.contains("projectqt", ignoreCase = true)
-                    val effectivePma = prefs.isSpinePma || isProjectQt
+                    val isAutoPma = SpineModelHelper.shouldEnablePma(prefs.skelPath, prefs.spineAtlasPath)
+                    val effectivePma = prefs.isSpinePma || isAutoPma
                     webView?.evaluateJavascript("setPmaMode($effectivePma)", null)
+                }
+                key == WaifuPreferences.KEY_FPS_LIMIT -> {
+                    webView?.evaluateJavascript("setTargetFps(${prefs.fpsLimit})", null)
+                }
+                key in listOf(WaifuPreferences.KEY_ANTIALIAS, WaifuPreferences.KEY_RENDER_SCALE) -> {
+                    currentLoadedEngine = ""
+                    ensureCorrectEngineLoaded(forceReloadModel = true)
                 }
                 key in listOf(
                     WaifuPreferences.KEY_BG_TYPE,

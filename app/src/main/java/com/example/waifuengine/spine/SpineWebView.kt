@@ -31,6 +31,7 @@ import androidx.webkit.WebViewAssetLoader.AssetsPathHandler
 import androidx.webkit.WebViewAssetLoader.InternalStoragePathHandler
 import org.json.JSONArray
 import org.json.JSONObject
+import com.example.waifuengine.data.WaifuPreferences
 import java.io.File
 import java.io.FileInputStream
 
@@ -97,6 +98,7 @@ fun SpineWebView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val prefs = remember { WaifuPreferences(context) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var isEngineReady by remember { mutableStateOf(false) }
@@ -124,7 +126,6 @@ fun SpineWebView(
             WebViewAssetLoader.Builder()
                 .setDomain("appassets.androidview.local")
                 .addPathHandler("/assets/", AssetsPathHandler(context))
-                .addPathHandler("/files/", InternalStoragePathHandler(context, context.filesDir))
                 .build()
         } catch (_: Exception) {
             null
@@ -215,6 +216,13 @@ fun SpineWebView(
     LaunchedEffect(isAnimating) {
         if (!isAnimating && isEngineReady && webViewRef != null && isActive) {
             webViewRef?.evaluateJavascript("resizeToContainer()", null)
+        }
+    }
+
+    LaunchedEffect(prefs.fpsLimit, isEngineReady, webViewRef) {
+        val view = webViewRef ?: return@LaunchedEffect
+        if (isEngineReady && isActive) {
+            view.evaluateJavascript("setTargetFps(${prefs.fpsLimit})", null)
         }
     }
 
@@ -355,7 +363,7 @@ fun SpineWebView(
                     }
                 }
 
-                loadUrl("https://appassets.androidview.local/assets/spine/index.html")
+                loadUrl("https://appassets.androidview.local/assets/spine/index.html?fps=${prefs.fpsLimit}&antialias=${prefs.isAntialiasEnabled}&scale=${prefs.renderScale}")
             }
         },
         update = { view ->

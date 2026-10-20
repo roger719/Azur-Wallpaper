@@ -18,11 +18,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -56,6 +61,10 @@ fun SettingsDialog(
 
     val strings = AppStrings(currentLanguage)
     var showChangelog by remember { mutableStateOf(false) }
+    var forcePma by remember { mutableStateOf(prefs.isSpinePma) }
+    var fpsLimit by remember { mutableIntStateOf(prefs.fpsLimit) }
+    var antialias by remember { mutableStateOf(prefs.isAntialiasEnabled) }
+    var renderScale by remember { mutableFloatStateOf(prefs.renderScale) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -148,13 +157,6 @@ fun SettingsDialog(
                         color = nothingTextPrimary,
                         letterSpacing = 0.5.sp
                     )
-                    Text(
-                        text = strings.languageDescription,
-                        fontSize = 10.sp,
-                        color = nothingTextSecondary
-                    )
-
-                    Spacer(modifier = Modifier.height(2.dp))
 
                     // Option Français
                     val isFr = currentLanguage == WaifuPreferences.LANGUAGE_FR
@@ -256,6 +258,240 @@ fun SettingsDialog(
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = nothingBorder, thickness = 1.dp)
+
+                // SECTION PERFORMANCES & RENDU
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = strings.performanceSection,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = nothingTextPrimary,
+                        letterSpacing = 0.5.sp
+                    )
+
+                    // 1. Forcer le mode PMA
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color.White,
+                        border = BorderStroke(1.dp, nothingBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
+                                Text(
+                                    text = strings.forcePmaLabel,
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = nothingTextPrimary
+                                )
+                                Text(
+                                    text = strings.forcePmaSubtitle,
+                                    fontSize = 10.sp,
+                                    color = nothingTextSecondary
+                                )
+                            }
+                            Switch(
+                                checked = forcePma,
+                                onCheckedChange = { enabled ->
+                                    forcePma = enabled
+                                    prefs.isSpinePma = enabled
+                                }
+                            )
+                        }
+                    }
+
+                    // 2. Limite de framerate (FPS)
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color.White,
+                        border = BorderStroke(1.dp, nothingBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = strings.framerateLimitLabel,
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = nothingTextPrimary
+                                )
+                                Text(
+                                    text = if (fpsLimit == 0) "120Hz" else "${fpsLimit} FPS",
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = accentBlue
+                                )
+                            }
+                            Text(
+                                text = strings.framerateLimitSubtitle,
+                                fontSize = 10.sp,
+                                color = nothingTextSecondary
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                val fpsOptions = listOf(30 to strings.fps30, 45 to strings.fps45, 60 to strings.fps60, 0 to strings.fpsMax)
+                                fpsOptions.forEach { (fpsVal, label) ->
+                                    val isSelected = fpsLimit == fpsVal
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = {
+                                            fpsLimit = fpsVal
+                                            prefs.fpsLimit = fpsVal
+                                        },
+                                        label = {
+                                            Text(
+                                                text = label,
+                                                fontSize = 10.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = nothingBlack,
+                                            selectedLabelColor = Color.White
+                                        ),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. Anticrénelage WebGL
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color.White,
+                        border = BorderStroke(1.dp, nothingBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
+                                Text(
+                                    text = strings.antialiasLabel,
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = nothingTextPrimary
+                                )
+                                Text(
+                                    text = strings.antialiasSubtitle,
+                                    fontSize = 10.sp,
+                                    color = nothingTextSecondary
+                                )
+                            }
+                            Switch(
+                                checked = antialias,
+                                onCheckedChange = { enabled ->
+                                    antialias = enabled
+                                    prefs.isAntialiasEnabled = enabled
+                                }
+                            )
+                        }
+                    }
+
+                    // 4. Résolution de rendu
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color.White,
+                        border = BorderStroke(1.dp, nothingBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = strings.renderResolutionLabel,
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = nothingTextPrimary
+                                )
+                                Text(
+                                    text = "${(renderScale * 100).toInt()}%",
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = accentBlue
+                                )
+                            }
+                            Text(
+                                text = strings.renderResolutionSubtitle,
+                                fontSize = 10.sp,
+                                color = nothingTextSecondary
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                val resOptions = listOf(1.0f to strings.res100, 0.75f to strings.res75, 0.5f to strings.res50)
+                                resOptions.forEach { (scaleVal, label) ->
+                                    val isSelected = Math.abs(renderScale - scaleVal) < 0.05f
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = {
+                                            renderScale = scaleVal
+                                            prefs.renderScale = scaleVal
+                                        },
+                                        label = {
+                                            Text(
+                                                text = label,
+                                                fontSize = 10.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = nothingBlack,
+                                            selectedLabelColor = Color.White
+                                        ),
+                                        modifier = Modifier.weight(1f)
                                     )
                                 }
                             }
@@ -379,27 +615,12 @@ fun SettingsDialog(
 
                 HorizontalDivider(color = nothingBorder, thickness = 1.dp)
 
-                // PIED DE PAGE : VERSION & FERMETURE
+                // PIED DE PAGE : FERMETURE
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = Color.White,
-                        border = BorderStroke(1.dp, nothingBorder)
-                    ) {
-                        Text(
-                            text = strings.appVersion,
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            color = nothingTextSecondary,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                        )
-                    }
-
                     Button(
                         onClick = onDismiss,
                         shape = RoundedCornerShape(14.dp),

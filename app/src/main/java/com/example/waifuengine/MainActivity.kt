@@ -716,6 +716,9 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
             currentSkelPath = targetPath
             val isCurrentApplied = targetPath.isNotEmpty() && targetPath == prefs.skelPath
 
+            val isAutoPma = SpineModelHelper.shouldEnablePma(targetPath, variant.spineAtlasPath)
+            val effectivePma = prefs.isSpinePma || isAutoPma
+
             if (isCurrentApplied) {
                 currentScale = prefs.scale
                 currentOffsetX = prefs.offsetX
@@ -723,8 +726,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                 idleAnimation = prefs.idleAnimation
                 wakeupAnimation = prefs.wakeupAnimation
                 clickAnimation = prefs.clickAnimation
-                val isProjectQt = targetPath.contains("Project QT", ignoreCase = true) || targetPath.contains("projectqt", ignoreCase = true)
-                isSpinePma = if (isProjectQt) true else prefs.isSpinePma
+                isSpinePma = effectivePma
             } else {
                 val matchingPreset = userPresets.find { it.skelPath == targetPath }
                 if (matchingPreset != null) {
@@ -733,7 +735,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     currentOffsetY = matchingPreset.offsetY
                     idleAnimation = matchingPreset.idleAnimation
                     clickAnimation = matchingPreset.clickAnimation
-                    isSpinePma = matchingPreset.isSpinePma
+                    isSpinePma = if (prefs.isSpinePma) true else (matchingPreset.isSpinePma || isAutoPma)
                 } else {
                     currentScale = 1.0f
                     currentOffsetX = 0f
@@ -741,8 +743,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                     idleAnimation = ""
                     wakeupAnimation = ""
                     clickAnimation = ""
-                    val isProjectQt = targetPath.contains("Project QT", ignoreCase = true) || targetPath.contains("projectqt", ignoreCase = true)
-                    isSpinePma = isProjectQt
+                    isSpinePma = effectivePma
                 }
             }
         }
@@ -1601,7 +1602,6 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
             prefs.idleAnimation = idleAnimation
             prefs.wakeupAnimation = wakeupAnimation
             prefs.clickAnimation = clickAnimation
-            prefs.isSpinePma = isSpinePma
             prefs.isPointerTrackingEnabled = isPointerTrackingEnabled
             prefs.bgType = bgType
             if (bgType == WaifuPreferences.TYPE_COLOR) {
@@ -2698,7 +2698,12 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
             },
 
-            onDismiss = { showSettingsDialog = false }
+            onDismiss = {
+                showSettingsDialog = false
+                val atlasPath = selectedVariant?.spineAtlasPath.orEmpty()
+                val isAutoPma = SpineModelHelper.shouldEnablePma(currentSkelPath, atlasPath)
+                isSpinePma = prefs.isSpinePma || isAutoPma
+            }
 
         )
 
@@ -5148,7 +5153,8 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
                                                                     clickAnimation = preset.clickAnimation
 
-                                                                    isSpinePma = preset.isSpinePma
+                                                                    val autoPma = SpineModelHelper.shouldEnablePma(preset.skelPath, preset.spineAtlasPath)
+                                                                    isSpinePma = prefs.isSpinePma || preset.isSpinePma || autoPma
 
                                                                     isPointerTrackingEnabled = preset.isPointerTrackingEnabled
 
@@ -5159,8 +5165,6 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                                     prefs.wakeupAnimation = preset.wakeupAnimation
 
                                                                     prefs.clickAnimation = preset.clickAnimation
-
-                                                                    prefs.isSpinePma = preset.isSpinePma
 
                                                                     prefs.isPointerTrackingEnabled = preset.isPointerTrackingEnabled
 
@@ -6053,39 +6057,6 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                         }
 
                                                     }
-
-                                                    val isSpineModelActive = selectedCharacter?.engineType == EngineType.SPINE || SpineModelHelper.isSpineFile(currentSkelPath)
-                                                    if (isSpineModelActive) {
-                                                        HorizontalDivider(color = nothingBorder.copy(alpha = 0.5f), thickness = 0.8.dp)
-
-                                                        Row(
-                                                            modifier = Modifier.fillMaxWidth(),
-                                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                                            verticalAlignment = Alignment.CenterVertically
-                                                        ) {
-                                                            Column(modifier = Modifier.weight(1f)) {
-                                                                Text(
-                                                                    text = strings.spinePmaLabel,
-                                                                    fontSize = 11.sp,
-                                                                    fontWeight = FontWeight.Bold,
-                                                                    color = nothingTextPrimary
-                                                                )
-                                                                Text(
-                                                                    text = strings.spinePmaSubtitle,
-                                                                    fontSize = 10.sp,
-                                                                    color = nothingTextSecondary
-                                                                )
-                                                            }
-                                                            Switch(
-                                                                checked = isSpinePma,
-                                                                onCheckedChange = { enabled ->
-                                                                    isSpinePma = enabled
-                                                                    prefs.isSpinePma = enabled
-                                                                }
-                                                            )
-                                                        }
-                                                    }
-
                                                 }
 
                                             }
