@@ -61,10 +61,16 @@ object CharacterRepository {
         }
         if (hasDirectLive2D) return true
 
+        val subDirs = files.filter { it.isDirectory && !it.name.startsWith(".") }
+
+        // Cas d'un dossier qui ne contient qu'un seul sous-dossier qui est un modèle Live2D
+        if (subDirs.size == 1 && isLive2DDirectory(subDirs.first()) && !isSpineDirectory(dir)) {
+            return true
+        }
+
         // Cas d'un dossier avec display_name.txt (dossier personnage créé à l'import ZIP ou au téléchargement Workshop)
         if (File(dir, "display_name.txt").exists()) {
             if (!isSpineDirectory(dir)) {
-                val subDirs = files.filter { it.isDirectory && !it.name.startsWith(".") }
                 val skinSubDirs = subDirs.filter { isLive2DDirectory(it) || isSpineDirectory(it) }
                 // Si le dossier contient plusieurs personnages distincts en sous-dossiers, c'est un conteneur
                 if (skinSubDirs.size > 1) {
@@ -302,7 +308,61 @@ object CharacterRepository {
         }
     }
 
+    fun flattenWrapperDirectory(dir: File) {
+        if (!dir.isDirectory) return
+        val dirName = dir.name
+        // Ne jamais aplatir la racine CustomSkins ni un dossier de jeu direct sous CustomSkins
+        if (dirName.equals("CustomSkins", ignoreCase = true)) return
+        val parent = dir.parentFile ?: return
+        if (parent.name.equals("CustomSkins", ignoreCase = true)) {
+            // dir est un dossier de jeu direct (ex: CustomSkins/Azure Lane). Ne pas aplatir le dossier de jeu lui-même !
+            return
+        }
+
+        while (true) {
+            val nonSpecial = dir.listFiles()?.filter {
+                !it.name.startsWith(".") &&
+                !it.name.equals("__MACOSX", ignoreCase = true) &&
+                !it.name.equals("display_name.txt", ignoreCase = true)
+            } ?: break
+
+            // Si le dossier ne contient qu'un seul élément et que cet élément est un sous-dossier
+            if (nonSpecial.size == 1 && nonSpecial[0].isDirectory) {
+                val innerDir = nonSpecial[0]
+                val innerFiles = innerDir.listFiles() ?: break
+                if (innerFiles.isEmpty()) break
+
+                // Remonter tous les éléments de innerDir dans dir
+                var allMoved = true
+                for (item in innerFiles) {
+                    val dest = File(dir, item.name)
+                    if (dest.exists()) {
+                        dest.deleteRecursively()
+                    }
+                    val moved = item.renameTo(dest)
+                    if (!moved) {
+                        try {
+                            item.copyRecursively(dest, overwrite = true)
+                            item.deleteRecursively()
+                        } catch (_: Exception) {
+                            allMoved = false
+                        }
+                    }
+                }
+                if (allMoved || innerDir.listFiles()?.isEmpty() == true) {
+                    innerDir.deleteRecursively()
+                } else {
+                    break
+                }
+            } else {
+                break
+            }
+        }
+    }
+
     fun scanDirectoryNode(dir: File): FileNode {
+        flattenWrapperDirectory(dir)
+
         if (isSkinDirectory(dir)) {
             val charItem = parseSkinDirectory(dir)
             return FileNode(
@@ -344,6 +404,7 @@ object CharacterRepository {
     }
 
     fun loadAllCustomCharacters(context: Context, dir: File = getRootDirectory(context)): List<CharacterItem> {
+        flattenWrapperDirectory(dir)
         val result = mutableListOf<CharacterItem>()
         if (isSkinDirectory(dir)) {
             parseSkinDirectory(dir)?.let { result.add(it) }
@@ -414,6 +475,9 @@ object CharacterRepository {
                 entry = zipInput.nextEntry
             }
             zipInput.close()
+
+            // Aplatir tout sous-dossier conteneur redondant créé par le ZIP
+            flattenWrapperDirectory(targetDir)
 
             isSkinDirectory(targetDir) || targetDir.walkTopDown().any { isSkinDirectory(it) }
         } catch (e: Exception) {

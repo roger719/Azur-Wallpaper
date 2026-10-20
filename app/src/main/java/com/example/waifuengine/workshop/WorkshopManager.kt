@@ -244,11 +244,19 @@ object WorkshopManager {
                 val parts = p.split("/").filter { it.isNotEmpty() }
                 if (parts.size < 2) continue
 
-                val isFirstCategory = isCategoryFolder(parts[0])
-                val (categoryHint, gameRaw, rest) = if (isFirstCategory && parts.size >= 3) {
-                    Triple(parts[0], parts[1], parts.drop(2))
-                } else {
-                    Triple("", parts[0], parts.drop(1))
+                val (categoryHint, gameRaw, rest) = when {
+                    isCategoryFolder(parts[0]) && parts.size >= 3 -> {
+                        Triple(parts[0], parts[1], parts.drop(2))
+                    }
+                    parts.size >= 3 && isCategoryFolder(parts[1]) -> {
+                        Triple(parts[1], parts[0], parts.drop(2))
+                    }
+                    isCategoryFolder(parts[0]) && parts.size == 2 -> {
+                        Triple(parts[0], "Custom", parts.drop(1))
+                    }
+                    else -> {
+                        Triple("", parts[0], parts.drop(1))
+                    }
                 }
 
                 if (rest.isEmpty()) continue
@@ -550,6 +558,7 @@ object WorkshopManager {
                         }
                     }
                 }
+                CharacterRepository.flattenWrapperDirectory(targetCharDir)
                 true
             }
         } catch (e: Exception) {
@@ -634,6 +643,7 @@ object WorkshopManager {
             sourceDir.copyRecursively(targetDir, overwrite = true)
             sourceDir.deleteRecursively()
         }
+        CharacterRepository.flattenWrapperDirectory(targetDir)
         return true
     }
 
