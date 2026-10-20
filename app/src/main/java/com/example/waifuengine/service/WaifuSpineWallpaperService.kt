@@ -201,6 +201,7 @@ class WaifuSpineWallpaperService : WallpaperService() {
                     val quotedModel = JSONObject.quote(targetModelUrl)
                     val quotedAtlas = if (targetAtlasUrl.isNotEmpty()) JSONObject.quote(targetAtlasUrl) else "null"
                     wv.evaluateJavascript("loadModelFromAndroid($quotedModel, $quotedAtlas)", null)
+                    wv.evaluateJavascript("setIdleAnimation(${JSONObject.quote(prefs.idleAnimation)})", null)
                     wv.evaluateJavascript("setCustomScale(${prefs.scale})", null)
                     wv.evaluateJavascript("setCustomOffset(${prefs.offsetX}, ${prefs.offsetY})", null)
                     wv.evaluateJavascript("setPointerTrackingEnabled(${prefs.isPointerTrackingEnabled})", null)
@@ -210,6 +211,7 @@ class WaifuSpineWallpaperService : WallpaperService() {
                 if (targetLive2DUrl.isNotEmpty()) {
                     val quotedPath = JSONObject.quote(targetLive2DUrl)
                     wv.evaluateJavascript("loadModelFromAndroid($quotedPath)", null)
+                    wv.evaluateJavascript("setIdleAnimation(${JSONObject.quote(prefs.idleAnimation)})", null)
                     wv.evaluateJavascript("setCustomScale(${prefs.scale})", null)
                     wv.evaluateJavascript("setCustomOffset(${prefs.offsetX}, ${prefs.offsetY})", null)
                     wv.evaluateJavascript("setPointerTrackingEnabled(${prefs.isPointerTrackingEnabled})", null)
@@ -875,6 +877,9 @@ class WaifuSpineWallpaperService : WallpaperService() {
                 }
                 key == WaifuPreferences.KEY_POINTER_TRACKING_ENABLED -> {
                     webView?.evaluateJavascript("setPointerTrackingEnabled(${prefs.isPointerTrackingEnabled})", null)
+                }
+                key == WaifuPreferences.KEY_IDLE_ANIM -> {
+                    webView?.evaluateJavascript("setIdleAnimation(${JSONObject.quote(prefs.idleAnimation)})", null)
                 }
                 key in listOf(
                     WaifuPreferences.KEY_BG_TYPE,

@@ -84,6 +84,7 @@ fun Live2DWebView(
     scale: Float = 1.0f,
     offsetX: Float = 0f,
     offsetY: Float = 0f,
+    idleAnimation: String = "DEFAULT",
     isPointerTrackingEnabled: Boolean = true,
     doubleTapTrigger: Int = 0,
     cornerRadiusPx: Float = 0f,
@@ -164,8 +165,19 @@ fun Live2DWebView(
         enforceStatusBarHidden()
         val quotedPath = JSONObject.quote(targetUrl)
         view.evaluateJavascript("loadModelFromAndroid($quotedPath)", null)
+        val quotedIdle = JSONObject.quote(idleAnimation)
+        view.evaluateJavascript("setIdleAnimation($quotedIdle)", null)
         applyTransform(view)
         view.evaluateJavascript("resizeToContainer()", null)
+    }
+
+    // Changement de l'animation au repos (idle)
+    LaunchedEffect(idleAnimation, isActive, isEngineReady, webViewRef) {
+        val view = webViewRef ?: return@LaunchedEffect
+        if (isEngineReady && isActive) {
+            val quotedIdle = JSONObject.quote(idleAnimation)
+            view.evaluateJavascript("setIdleAnimation($quotedIdle)", null)
+        }
     }
 
     // Application des transformations

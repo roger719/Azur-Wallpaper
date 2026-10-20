@@ -96,6 +96,36 @@
             }
         }
 
+        let customIdleAnimation = "DEFAULT";
+
+        function getEffectiveIdleAnimation() {
+            if (!model || !model.state || !model.state.data || !model.state.data.skeletonData) return null;
+            const anims = model.state.data.skeletonData.animations;
+            if (!anims || anims.length === 0) return null;
+
+            if (customIdleAnimation && customIdleAnimation !== "DEFAULT" && customIdleAnimation !== "NONE") {
+                const targetLower = customIdleAnimation.toLowerCase();
+                const matched = anims.find(a => a.name.toLowerCase() === targetLower)
+                    || anims.find(a => a.name.toLowerCase().includes(targetLower));
+                if (matched) return matched.name;
+            }
+
+            const defaultAnim = anims.find(n => {
+                const l = n.name.toLowerCase();
+                return l.includes("idle") || l.includes("stand") || l.includes("normal") || l.includes("wait");
+            }) || anims[0];
+            return defaultAnim ? defaultAnim.name : null;
+        }
+
+        function setIdleAnimation(animName) {
+            customIdleAnimation = animName || "DEFAULT";
+            const idle = getEffectiveIdleAnimation();
+            if (model && model.state && idle) {
+                model.state.setAnimation(0, idle, true);
+                if (app && app.renderer) app.renderer.render(app.stage);
+            }
+        }
+
         function playNamedAnimation(animName) {
             if (!model || !animName) return;
             const cleanStr = String(animName).trim();
@@ -119,12 +149,9 @@
 
                 if (matched) {
                     model.state.setAnimation(0, matched.name, false);
-                    const defaultAnim = anims.find(n => {
-                        const l = n.name.toLowerCase();
-                        return l.includes("idle") || l.includes("stand") || l.includes("normal") || l.includes("wait");
-                    }) || anims[0];
-                    if (defaultAnim) {
-                        model.state.addAnimation(0, defaultAnim.name, true, 0);
+                    const returnAnim = getEffectiveIdleAnimation();
+                    if (returnAnim) {
+                        model.state.addAnimation(0, returnAnim, true, 0);
                     }
                 }
             } catch (e) {
@@ -248,7 +275,11 @@
             currentLoader = loader;
 
             const options = {
-                metadata: {}
+                metadata: {
+                    imageMetadata: {
+                        alphaMode: PIXI.ALPHA_MODES.PMA
+                    }
+                }
             };
             if (atlasPath) {
                 options.metadata.spineAtlasFile = atlasPath;
@@ -280,6 +311,26 @@
                 }
 
                 try {
+                    // Fix PMA / Straight alpha mismatch:
+                    // Spine textures default to Premultiplied Alpha on export.
+                    // When .atlas omits 'pma: true' (as in Project QT, Arknights, older Spine),
+                    // ensuring PMA prevents WebGL from multiplying alpha a second time on upload.
+                    if (res.spineAtlas && res.spineAtlas.pages) {
+                        res.spineAtlas.pages.forEach(page => {
+                            if (page.baseTexture && page.pma !== false) {
+                                page.baseTexture.alphaMode = PIXI.ALPHA_MODES.PMA;
+                            }
+                        });
+                    }
+                    if (res.spineData && res.spineData.images) {
+                        for (const key in res.spineData.images) {
+                            const tex = res.spineData.images[key];
+                            if (tex && tex.baseTexture && tex.baseTexture.alphaMode !== PIXI.ALPHA_MODES.PMA) {
+                                tex.baseTexture.alphaMode = PIXI.ALPHA_MODES.PMA;
+                            }
+                        }
+                    }
+
                     model = new PIXI.spine.Spine(res.spineData);
                     app.stage.addChild(model);
                     currentLoadedPath = modelPath;
@@ -294,14 +345,10 @@
                     }
                     notifyAndroid("onAnimationsLoaded", JSON.stringify(animNames));
 
-                    // Default idle animation
-                    const defaultAnim = animNames.find(n => {
-                        const l = n.toLowerCase();
-                        return l.includes("idle") || l.includes("stand") || l.includes("normal") || l.includes("wait");
-                    }) || animNames[0];
-
-                    if (defaultAnim) {
-                        model.state.setAnimation(0, defaultAnim, true);
+                    // Effective idle animation (custom selection or auto-detected default)
+                    const idleAnim = getEffectiveIdleAnimation();
+                    if (idleAnim) {
+                        model.state.setAnimation(0, idleAnim, true);
                     }
 
                     fitModel();
@@ -462,6 +509,7 @@
         window.setPointerPosition = setPointerPosition;
         window.setPointerTrackingEnabled = setPointerTrackingEnabled;
         window.setModelVisible = setModelVisible;
+        window.setIdleAnimation = setIdleAnimation;
         window.playActionAnimation = playActionAnimation;
         window.playNamedAnimation = playNamedAnimation;
         window.pauseRendering = pauseRendering;

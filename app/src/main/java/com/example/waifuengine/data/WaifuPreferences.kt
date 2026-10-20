@@ -27,6 +27,7 @@ data class PresetItem(
     val offsetY: Float,
     val selectedCharacterName: String,
     val selectedVariantLabel: String,
+    val idleAnimation: String = "DEFAULT",
     val wakeupAnimation: String,
     val clickAnimation: String,
     val isPointerTrackingEnabled: Boolean = true,
@@ -100,6 +101,10 @@ class WaifuPreferences(private val context: Context) {
 
     private val defaultVariantLabelFallback: String
         get() = if (appLanguage == LANGUAGE_EN) "Main Skin" else "Skin Principal"
+
+    var idleAnimation: String
+        get() = prefs.getString(KEY_IDLE_ANIM, "DEFAULT") ?: "DEFAULT"
+        set(value) = prefs.edit { putString(KEY_IDLE_ANIM, value) }
 
     var wakeupAnimation: String
         get() = prefs.getString(KEY_WAKEUP_ANIM, "") ?: ""
@@ -317,6 +322,7 @@ class WaifuPreferences(private val context: Context) {
                         offsetY = obj.optDouble("offsetY", 0.0).toFloat(),
                         selectedCharacterName = obj.optString("selectedCharacterName", ""),
                         selectedVariantLabel = obj.optString("selectedVariantLabel", ""),
+                        idleAnimation = obj.optString("idleAnimation", "DEFAULT"),
                         wakeupAnimation = obj.optString("wakeupAnimation", ""),
                         clickAnimation = obj.optString("clickAnimation", ""),
                         isPointerTrackingEnabled = obj.optBoolean("isPointerTrackingEnabled", true),
@@ -369,6 +375,7 @@ class WaifuPreferences(private val context: Context) {
                 put("offsetY", item.offsetY)
                 put("selectedCharacterName", item.selectedCharacterName)
                 put("selectedVariantLabel", item.selectedVariantLabel)
+                put("idleAnimation", item.idleAnimation)
                 put("wakeupAnimation", item.wakeupAnimation)
                 put("clickAnimation", item.clickAnimation)
                 put("isPointerTrackingEnabled", item.isPointerTrackingEnabled)
@@ -467,6 +474,7 @@ class WaifuPreferences(private val context: Context) {
         const val KEY_OFFSET_Y = "key_offset_y"
         const val KEY_CHAR_NAME = "key_char_name"
         const val KEY_VARIANT_LABEL = "key_variant_label"
+        const val KEY_IDLE_ANIM = "key_idle_anim"
         const val KEY_WAKEUP_ANIM = "key_wakeup_anim"
         const val KEY_CLICK_ANIM = "key_click_anim"
         const val KEY_POINTER_TRACKING_ENABLED = "key_pointer_tracking_enabled"

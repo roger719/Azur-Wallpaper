@@ -203,6 +203,7 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                     val quotedModel = JSONObject.quote(targetModelUrlSpine)
                     val quotedAtlas = if (targetAtlasUrlSpine.isNotEmpty()) JSONObject.quote(targetAtlasUrlSpine) else "null"
                     wv.evaluateJavascript("loadModelFromAndroid($quotedModel, $quotedAtlas)", null)
+                    wv.evaluateJavascript("setIdleAnimation(${JSONObject.quote(prefs.idleAnimation)})", null)
                     wv.evaluateJavascript("setCustomScale(${prefs.scale})", null)
                     wv.evaluateJavascript("setCustomOffset(${prefs.offsetX}, ${prefs.offsetY})", null)
                     wv.evaluateJavascript("setPointerTrackingEnabled(${prefs.isPointerTrackingEnabled})", null)
@@ -212,6 +213,7 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 if (targetUrl.isNotEmpty()) {
                     val quotedPath = JSONObject.quote(targetUrl)
                     wv.evaluateJavascript("loadModelFromAndroid($quotedPath)", null)
+                    wv.evaluateJavascript("setIdleAnimation(${JSONObject.quote(prefs.idleAnimation)})", null)
                     wv.evaluateJavascript("setCustomScale(${prefs.scale})", null)
                     wv.evaluateJavascript("setCustomOffset(${prefs.offsetX}, ${prefs.offsetY})", null)
                     wv.evaluateJavascript("setPointerTrackingEnabled(${prefs.isPointerTrackingEnabled})", null)
@@ -903,6 +905,9 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 }
                 key == WaifuPreferences.KEY_POINTER_TRACKING_ENABLED -> {
                     webView?.evaluateJavascript("setPointerTrackingEnabled(${prefs.isPointerTrackingEnabled})", null)
+                }
+                key == WaifuPreferences.KEY_IDLE_ANIM -> {
+                    webView?.evaluateJavascript("setIdleAnimation(${JSONObject.quote(prefs.idleAnimation)})", null)
                 }
                 key in listOf(
                     WaifuPreferences.KEY_BG_TYPE,

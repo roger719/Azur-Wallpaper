@@ -84,6 +84,7 @@ fun SpineWebView(
     scale: Float = 1.0f,
     offsetX: Float = 0f,
     offsetY: Float = 0f,
+    idleAnimation: String = "DEFAULT",
     isPointerTrackingEnabled: Boolean = true,
     doubleTapTrigger: Int = 0,
     cornerRadiusPx: Float = 0f,
@@ -168,8 +169,19 @@ fun SpineWebView(
         val quotedModel = JSONObject.quote(targetModelUrl)
         val quotedAtlas = if (targetAtlasUrl.isNotEmpty()) JSONObject.quote(targetAtlasUrl) else "null"
         view.evaluateJavascript("loadModelFromAndroid($quotedModel, $quotedAtlas)", null)
+        val quotedIdle = JSONObject.quote(idleAnimation)
+        view.evaluateJavascript("setIdleAnimation($quotedIdle)", null)
         applyTransform(view)
         view.evaluateJavascript("resizeToContainer()", null)
+    }
+
+    // Changement de l'animation au repos (idle)
+    LaunchedEffect(idleAnimation, isActive, isEngineReady, webViewRef) {
+        val view = webViewRef ?: return@LaunchedEffect
+        if (isEngineReady && isActive) {
+            val quotedIdle = JSONObject.quote(idleAnimation)
+            view.evaluateJavascript("setIdleAnimation($quotedIdle)", null)
+        }
     }
 
     // Application des transformations

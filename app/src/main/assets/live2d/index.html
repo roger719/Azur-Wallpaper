@@ -160,17 +160,41 @@
             return file.replace(/(\.anim)?\.motion3(\.json)?$/i, "");
         }
 
+        let customIdleAnimation = "DEFAULT";
+
         function setupMotions(m) {
             try {
                 const mm = m.internalModel.motionManager;
                 if (!mm || !mm.definitions) return;
 
-                const defs = mm.definitions[GROUP] || mm.definitions["Idle"] || [];
-                const idleDef = defs.find(d => motionName(d).toLowerCase().includes("idle"));
-                actionIndex = defs.findIndex(d => motionName(d).toLowerCase().includes("action") || motionName(d).toLowerCase().includes("touch"));
+                let chosenDef = null;
 
-                if (idleDef) {
-                    mm.definitions[IDLE_GROUP] = [idleDef];
+                if (customIdleAnimation && customIdleAnimation !== "DEFAULT" && customIdleAnimation !== "NONE") {
+                    const target = customIdleAnimation.toLowerCase();
+                    for (const [groupKey, defs] of Object.entries(mm.definitions)) {
+                        if (Array.isArray(defs)) {
+                            for (let i = 0; i < defs.length; i++) {
+                                const name = motionName(defs[i]).toLowerCase();
+                                if (name && (name === target || name.includes(target) || target.includes(name))) {
+                                    chosenDef = defs[i];
+                                    break;
+                                }
+                            }
+                        }
+                        if (chosenDef) break;
+                    }
+                }
+
+                if (!chosenDef) {
+                    const defs = mm.definitions[GROUP] || mm.definitions["Idle"] || [];
+                    chosenDef = defs.find(d => motionName(d).toLowerCase().includes("idle")) || defs[0];
+                }
+
+                const allDefs = mm.definitions[GROUP] || mm.definitions["Idle"] || [];
+                actionIndex = allDefs.findIndex(d => motionName(d).toLowerCase().includes("action") || motionName(d).toLowerCase().includes("touch"));
+
+                if (chosenDef) {
+                    mm.definitions[IDLE_GROUP] = [chosenDef];
                     mm.motionGroups[IDLE_GROUP] = [undefined];
                     mm.groups.idle = IDLE_GROUP;
                     m.motion(IDLE_GROUP, 0, 1);
@@ -179,6 +203,14 @@
                 console.error("Motions setup error:", e);
             }
         }
+
+        function setIdleAnimation(animName) {
+            customIdleAnimation = animName || "DEFAULT";
+            if (model && model.internalModel && model.internalModel.motionManager) {
+                setupMotions(model);
+            }
+        }
+        window.setIdleAnimation = setIdleAnimation;
 
         async function loadModel(path) {
             const token = ++loadToken;
