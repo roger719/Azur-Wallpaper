@@ -173,6 +173,10 @@
                 return;
             }
 
+            if (typeof customScale !== "number" || isNaN(customScale) || customScale <= 0) customScale = 1.0;
+            if (typeof customOffsetX !== "number" || isNaN(customOffsetX)) customOffsetX = 0.0;
+            if (typeof customOffsetY !== "number" || isNaN(customOffsetY)) customOffsetY = 0.0;
+
             let bX = 0, bY = 0, bW = 0, bH = 0;
             try {
                 const bounds = model.getLocalBounds();
@@ -221,7 +225,14 @@
         let pendingPmaMode = false;
 
         function loadModelFromAndroid(modelPath, atlasPath, isPma) {
-            currentPmaMode = (isPma === true || isPma === "true" || isPma === 1);
+            let effectivePma = (isPma === true || isPma === "true" || isPma === 1);
+            if (!effectivePma && modelPath) {
+                const pLower = String(modelPath).toLowerCase();
+                if (pLower.includes("project qt") || pLower.includes("projectqt") || pLower.includes("bikini%20girls")) {
+                    effectivePma = true;
+                }
+            }
+            currentPmaMode = effectivePma;
             if (!modelPath) return;
             if (!modelPath.startsWith("file://") && !modelPath.startsWith("http")) {
                 modelPath = "file://" + modelPath;
@@ -251,9 +262,15 @@
         }
 
         function setPmaMode(isPma) {
-            const pma = (isPma === true || isPma === "true" || isPma === 1);
-            if (pma === currentPmaMode) return;
-            currentPmaMode = pma;
+            let effectivePma = (isPma === true || isPma === "true" || isPma === 1);
+            if (!effectivePma && currentLoadedPath) {
+                const pLower = String(currentLoadedPath).toLowerCase();
+                if (pLower.includes("project qt") || pLower.includes("projectqt") || pLower.includes("bikini%20girls")) {
+                    effectivePma = true;
+                }
+            }
+            if (effectivePma === currentPmaMode) return;
+            currentPmaMode = effectivePma;
             if (currentLoadedPath) {
                 const targetModel = currentLoadedPath;
                 const targetAtlas = currentAtlasPath;

@@ -602,8 +602,10 @@ this.PIXI.spine = this.PIXI.spine || {};
                             }
                             page.baseTexture = texture;
                             //TODO: set scaleMode and mipmapMode from spine
-                            if (page.pma) {
+                            if (page.pma === true) {
                                 texture.alphaMode = constants.ALPHA_MODES.PMA;
+                            } else if (page.pma === false) {
+                                texture.alphaMode = constants.ALPHA_MODES.UNPACK;
                             }
                             if (!texture.valid) {
                                 texture.setSize(page.width, page.height);
@@ -2669,6 +2671,9 @@ this.PIXI.spine = this.PIXI.spine || {};
                     if (!resource.error) {
                         if (line.indexOf('-pma.') >= 0) {
                             resource.texture.baseTexture.alphaMode = constants.ALPHA_MODES.PMA;
+                        }
+                        if (imageOptions && imageOptions.metadata && imageOptions.metadata.alphaMode) {
+                            resource.texture.baseTexture.alphaMode = imageOptions.metadata.alphaMode;
                         }
                         callback(resource.texture.baseTexture);
                     }

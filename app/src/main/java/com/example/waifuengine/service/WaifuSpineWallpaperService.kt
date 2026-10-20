@@ -135,7 +135,6 @@ class WaifuSpineWallpaperService : WallpaperService() {
                 WebViewAssetLoader.Builder()
                     .setDomain("appassets.androidview.local")
                     .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this@WaifuSpineWallpaperService))
-                    .addPathHandler("/files/", WebViewAssetLoader.InternalStoragePathHandler(this@WaifuSpineWallpaperService, filesDir))
                     .build()
             } catch (_: Exception) { null }
 
@@ -200,7 +199,9 @@ class WaifuSpineWallpaperService : WallpaperService() {
                 if (targetModelUrl.isNotEmpty()) {
                     val quotedModel = JSONObject.quote(targetModelUrl)
                     val quotedAtlas = if (targetAtlasUrl.isNotEmpty()) JSONObject.quote(targetAtlasUrl) else "null"
-                    wv.evaluateJavascript("loadModelFromAndroid($quotedModel, $quotedAtlas, ${prefs.isSpinePma})", null)
+                    val isProjectQt = prefs.skelPath.contains("Project QT", ignoreCase = true) || prefs.skelPath.contains("projectqt", ignoreCase = true)
+                    val effectivePma = prefs.isSpinePma || isProjectQt
+                    wv.evaluateJavascript("loadModelFromAndroid($quotedModel, $quotedAtlas, $effectivePma)", null)
                     wv.evaluateJavascript("setIdleAnimation(${JSONObject.quote(prefs.idleAnimation)})", null)
                     wv.evaluateJavascript("setCustomScale(${prefs.scale})", null)
                     wv.evaluateJavascript("setCustomOffset(${prefs.offsetX}, ${prefs.offsetY})", null)
@@ -400,13 +401,16 @@ class WaifuSpineWallpaperService : WallpaperService() {
                         setBackgroundColor(AndroidColor.TRANSPARENT)
                         setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
-                        webChromeClient = WebChromeClient()
+                        webChromeClient = object : WebChromeClient() {
+                            override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
+                                android.util.Log.d("WaifuSpineWallpaper", "${consoleMessage?.message()} [${consoleMessage?.sourceId()}:${consoleMessage?.lineNumber()}]")
+                                return true
+                            }
+                        }
 
                         webViewClient = object : WebViewClient() {
                             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                                 val url = request?.url ?: return null
-                                val defaultResponse = try { assetLoader?.shouldInterceptRequest(url) } catch (_: Exception) { null }
-                                if (defaultResponse != null) return defaultResponse
 
                                 if (url.host == "appassets.androidview.local") {
                                     val path = url.path.orEmpty()
@@ -427,7 +431,11 @@ class WaifuSpineWallpaperService : WallpaperService() {
                                             }
                                             return try {
                                                 val stream = java.io.FileInputStream(file)
-                                                val headers = mapOf("Access-Control-Allow-Origin" to "*")
+                                                val headers = mapOf(
+                                                    "Access-Control-Allow-Origin" to "*",
+                                                    "Access-Control-Allow-Methods" to "GET, OPTIONS",
+                                                    "Access-Control-Allow-Headers" to "*"
+                                                )
                                                 WebResourceResponse(mimeType, "UTF-8", 200, "OK", headers, stream)
                                             } catch (_: Exception) { null }
                                         }
@@ -446,11 +454,19 @@ class WaifuSpineWallpaperService : WallpaperService() {
                                         }
                                         return try {
                                             val stream = assets.open(relPath)
-                                            val headers = mapOf("Access-Control-Allow-Origin" to "*")
+                                            val headers = mapOf(
+                                                "Access-Control-Allow-Origin" to "*",
+                                                "Access-Control-Allow-Methods" to "GET, OPTIONS",
+                                                "Access-Control-Allow-Headers" to "*"
+                                            )
                                             WebResourceResponse(mimeType, "UTF-8", 200, "OK", headers, stream)
                                         } catch (_: Exception) { null }
                                     }
                                 }
+
+                                val defaultResponse = try { assetLoader?.shouldInterceptRequest(url) } catch (_: Exception) { null }
+                                if (defaultResponse != null) return defaultResponse
+
                                 return null
                             }
 
@@ -880,7 +896,9 @@ class WaifuSpineWallpaperService : WallpaperService() {
                     webView?.evaluateJavascript("setIdleAnimation(${JSONObject.quote(prefs.idleAnimation)})", null)
                 }
                 key == WaifuPreferences.KEY_SPINE_PMA -> {
-                    webView?.evaluateJavascript("setPmaMode(${prefs.isSpinePma})", null)
+                    val isProjectQt = prefs.skelPath.contains("Project QT", ignoreCase = true) || prefs.skelPath.contains("projectqt", ignoreCase = true)
+                    val effectivePma = prefs.isSpinePma || isProjectQt
+                    webView?.evaluateJavascript("setPmaMode($effectivePma)", null)
                 }
                 key in listOf(
                     WaifuPreferences.KEY_BG_TYPE,

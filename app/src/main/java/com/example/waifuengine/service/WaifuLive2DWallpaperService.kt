@@ -137,7 +137,6 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 WebViewAssetLoader.Builder()
                     .setDomain("appassets.androidview.local")
                     .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this@WaifuLive2DWallpaperService))
-                    .addPathHandler("/files/", WebViewAssetLoader.InternalStoragePathHandler(this@WaifuLive2DWallpaperService, filesDir))
                     .build()
             } catch (_: Exception) { null }
 
@@ -202,7 +201,9 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 if (targetModelUrlSpine.isNotEmpty()) {
                     val quotedModel = JSONObject.quote(targetModelUrlSpine)
                     val quotedAtlas = if (targetAtlasUrlSpine.isNotEmpty()) JSONObject.quote(targetAtlasUrlSpine) else "null"
-                    wv.evaluateJavascript("loadModelFromAndroid($quotedModel, $quotedAtlas)", null)
+                    val isProjectQt = prefs.skelPath.contains("Project QT", ignoreCase = true) || prefs.skelPath.contains("projectqt", ignoreCase = true)
+                    val effectivePma = prefs.isSpinePma || isProjectQt
+                    wv.evaluateJavascript("loadModelFromAndroid($quotedModel, $quotedAtlas, $effectivePma)", null)
                     wv.evaluateJavascript("setIdleAnimation(${JSONObject.quote(prefs.idleAnimation)})", null)
                     wv.evaluateJavascript("setCustomScale(${prefs.scale})", null)
                     wv.evaluateJavascript("setCustomOffset(${prefs.offsetX}, ${prefs.offsetY})", null)
@@ -405,13 +406,16 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                         setBackgroundColor(AndroidColor.TRANSPARENT)
                         setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
-                        webChromeClient = WebChromeClient()
+                        webChromeClient = object : WebChromeClient() {
+                            override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
+                                android.util.Log.d("WaifuLive2DWallpaper", "${consoleMessage?.message()} [${consoleMessage?.sourceId()}:${consoleMessage?.lineNumber()}]")
+                                return true
+                            }
+                        }
 
                         webViewClient = object : WebViewClient() {
                             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                                 val url = request?.url ?: return null
-                                val defaultResponse = try { assetLoader?.shouldInterceptRequest(url) } catch (_: Exception) { null }
-                                if (defaultResponse != null) return defaultResponse
 
                                 if (url.host == "appassets.androidview.local") {
                                     val path = url.path.orEmpty()
@@ -432,7 +436,11 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                                             }
                                             return try {
                                                 val stream = java.io.FileInputStream(file)
-                                                val headers = mapOf("Access-Control-Allow-Origin" to "*")
+                                                val headers = mapOf(
+                                                    "Access-Control-Allow-Origin" to "*",
+                                                    "Access-Control-Allow-Methods" to "GET, OPTIONS",
+                                                    "Access-Control-Allow-Headers" to "*"
+                                                )
                                                 WebResourceResponse(mimeType, "UTF-8", 200, "OK", headers, stream)
                                             } catch (_: Exception) { null }
                                         }
@@ -451,11 +459,19 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                                         }
                                         return try {
                                             val stream = assets.open(relPath)
-                                            val headers = mapOf("Access-Control-Allow-Origin" to "*")
+                                            val headers = mapOf(
+                                                "Access-Control-Allow-Origin" to "*",
+                                                "Access-Control-Allow-Methods" to "GET, OPTIONS",
+                                                "Access-Control-Allow-Headers" to "*"
+                                            )
                                             WebResourceResponse(mimeType, "UTF-8", 200, "OK", headers, stream)
                                         } catch (_: Exception) { null }
                                     }
                                 }
+
+                                val defaultResponse = try { assetLoader?.shouldInterceptRequest(url) } catch (_: Exception) { null }
+                                if (defaultResponse != null) return defaultResponse
+
                                 return null
                             }
 
@@ -908,6 +924,11 @@ class WaifuLive2DWallpaperService : WallpaperService() {
                 }
                 key == WaifuPreferences.KEY_IDLE_ANIM -> {
                     webView?.evaluateJavascript("setIdleAnimation(${JSONObject.quote(prefs.idleAnimation)})", null)
+                }
+                key == WaifuPreferences.KEY_SPINE_PMA -> {
+                    val isProjectQt = prefs.skelPath.contains("Project QT", ignoreCase = true) || prefs.skelPath.contains("projectqt", ignoreCase = true)
+                    val effectivePma = prefs.isSpinePma || isProjectQt
+                    webView?.evaluateJavascript("setPmaMode($effectivePma)", null)
                 }
                 key in listOf(
                     WaifuPreferences.KEY_BG_TYPE,

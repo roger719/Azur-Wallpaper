@@ -641,6 +641,14 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
 
     var currentSkelPath by remember { mutableStateOf(prefs.skelPath) }
+    var currentScale by remember { mutableFloatStateOf(prefs.scale) }
+    var currentOffsetX by remember { mutableFloatStateOf(prefs.offsetX) }
+    var currentOffsetY by remember { mutableFloatStateOf(prefs.offsetY) }
+    var idleAnimation by remember { mutableStateOf(prefs.idleAnimation) }
+    var wakeupAnimation by remember { mutableStateOf(prefs.wakeupAnimation) }
+    var clickAnimation by remember { mutableStateOf(prefs.clickAnimation) }
+    var isSpinePma by remember { mutableStateOf(prefs.isSpinePma) }
+    var userPresets by remember { mutableStateOf(prefs.getPresets()) }
 
 
 
@@ -703,15 +711,41 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
 
     LaunchedEffect(selectedVariant) {
-
         selectedVariant?.let { variant ->
-
             val targetPath = variant.modelJsonPath.ifEmpty { variant.mocPath }
-
             currentSkelPath = targetPath
+            val isCurrentApplied = targetPath.isNotEmpty() && targetPath == prefs.skelPath
 
+            if (isCurrentApplied) {
+                currentScale = prefs.scale
+                currentOffsetX = prefs.offsetX
+                currentOffsetY = prefs.offsetY
+                idleAnimation = prefs.idleAnimation
+                wakeupAnimation = prefs.wakeupAnimation
+                clickAnimation = prefs.clickAnimation
+                val isProjectQt = targetPath.contains("Project QT", ignoreCase = true) || targetPath.contains("projectqt", ignoreCase = true)
+                isSpinePma = if (isProjectQt) true else prefs.isSpinePma
+            } else {
+                val matchingPreset = userPresets.find { it.skelPath == targetPath }
+                if (matchingPreset != null) {
+                    currentScale = matchingPreset.scale
+                    currentOffsetX = matchingPreset.offsetX
+                    currentOffsetY = matchingPreset.offsetY
+                    idleAnimation = matchingPreset.idleAnimation
+                    clickAnimation = matchingPreset.clickAnimation
+                    isSpinePma = matchingPreset.isSpinePma
+                } else {
+                    currentScale = 1.0f
+                    currentOffsetX = 0f
+                    currentOffsetY = 0f
+                    idleAnimation = ""
+                    wakeupAnimation = ""
+                    clickAnimation = ""
+                    val isProjectQt = targetPath.contains("Project QT", ignoreCase = true) || targetPath.contains("projectqt", ignoreCase = true)
+                    isSpinePma = isProjectQt
+                }
+            }
         }
-
     }
 
 
@@ -758,85 +792,34 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
     var isPointerTrackingEnabled by remember { mutableStateOf(prefs.isPointerTrackingEnabled) }
 
-    var idleAnimation by remember { mutableStateOf(prefs.idleAnimation) }
-
-    var wakeupAnimation by remember { mutableStateOf(prefs.wakeupAnimation) }
-
-    var clickAnimation by remember { mutableStateOf(prefs.clickAnimation) }
-
-    var isSpinePma by remember { mutableStateOf(prefs.isSpinePma) }
-
-
-
     var isTouchZoneCustom by remember { mutableStateOf(prefs.isTouchZoneCustom) }
-
     var touchZoneLeft by remember { mutableFloatStateOf(prefs.touchZoneLeft) }
-
     var touchZoneTop by remember { mutableFloatStateOf(prefs.touchZoneTop) }
-
     var touchZoneWidth by remember { mutableFloatStateOf(prefs.touchZoneWidth) }
-
     var touchZoneHeight by remember { mutableFloatStateOf(prefs.touchZoneHeight) }
-
     var showTouchZoneEditor by remember { mutableStateOf(false) }
 
-
-
     val availableMotions = remember(selectedCharacter) {
-
         val char = selectedCharacter
-
         val folderPath = char?.folderPath.orEmpty()
-
         val folderFile = File(folderPath)
-
         if (folderPath.isNotEmpty() && folderFile.exists()) {
-
             CharacterRepository.getAvailableMotionsForCharacter(folderFile, char?.engineType ?: EngineType.LIVE2D)
-
         } else {
-
             listOf("Idle", "Action", "Touch", "Wakeup", "Special")
-
         }
-
     }
-
-
 
     LaunchedEffect(selectedCharacter) {
-
-        idleAnimation = prefs.idleAnimation
-
-        wakeupAnimation = prefs.wakeupAnimation
-
-        clickAnimation = prefs.clickAnimation
-
-        val isProjectQt = currentSkelPath.contains("Project QT", ignoreCase = true) || currentSkelPath.contains("projectqt", ignoreCase = true)
-        val pmaSetting = if (isProjectQt && !prefs.isSpinePma) true else prefs.isSpinePma
-        isSpinePma = pmaSetting
-        prefs.isSpinePma = pmaSetting
-
         isPointerTrackingEnabled = prefs.isPointerTrackingEnabled
-
         isTouchZoneCustom = prefs.isTouchZoneCustom
-
         touchZoneLeft = prefs.touchZoneLeft
-
         touchZoneTop = prefs.touchZoneTop
-
         touchZoneWidth = prefs.touchZoneWidth
-
         touchZoneHeight = prefs.touchZoneHeight
-
     }
 
-
-
     // GESTION DES PRÉSETS
-
-    var userPresets by remember { mutableStateOf(prefs.getPresets()) }
-
     var showSavePresetDialog by remember { mutableStateOf(false) }
 
     var showDeletePresetDialog by remember { mutableStateOf(false) }
@@ -1020,14 +1003,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
 
     // POPUP & CURSEURS DE DÉPLACEMENT ET DE ZOOM RÉACTIFS (STYLE AZUR WALLPAPER)
-
     var showTransformDialog by remember { mutableStateOf(false) }
-
-    var currentScale by remember { mutableFloatStateOf(prefs.scale) }
-
-    var currentOffsetX by remember { mutableFloatStateOf(prefs.offsetX) }
-
-    var currentOffsetY by remember { mutableFloatStateOf(prefs.offsetY) }
 
 
 
@@ -1620,36 +1596,27 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
             prefs.selectedVariantLabel = variant.label
 
             prefs.scale = currentScale
-
             prefs.offsetX = currentOffsetX
-
             prefs.offsetY = currentOffsetY
-
+            prefs.idleAnimation = idleAnimation
+            prefs.wakeupAnimation = wakeupAnimation
+            prefs.clickAnimation = clickAnimation
+            prefs.isSpinePma = isSpinePma
+            prefs.isPointerTrackingEnabled = isPointerTrackingEnabled
             prefs.bgType = bgType
-
             if (bgType == WaifuPreferences.TYPE_COLOR) {
-
                 prefs.bgColor = pickedColor.toArgb()
-
             }
-
-
 
             val targetServiceClass = if (charItem.engineType == EngineType.SPINE) {
-
                 WaifuSpineWallpaperService::class.java
-
             } else {
-
                 WaifuLive2DWallpaperService::class.java
-
             }
-
             val wallpaperManager = WallpaperManager.getInstance(context)
-
             val currentService = wallpaperManager.wallpaperInfo?.serviceName
-
-            val isWallpaperActive = currentService == targetServiceClass.name
+            val isWallpaperActive = currentService == WaifuSpineWallpaperService::class.java.name ||
+                                    currentService == WaifuLive2DWallpaperService::class.java.name
 
 
 
