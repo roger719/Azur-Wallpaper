@@ -26,8 +26,16 @@ object SpineModelHelper {
         }
         if (hasDirectSkelOrJson && hasDirectAtlas) return true
 
+        val parent = dir.parentFile
+        val isDirectGameFolder = parent != null && parent.name.equals("CustomSkins", ignoreCase = true)
+        val hasDisplayName = File(dir, "display_name.txt").exists()
+
+        if (isDirectGameFolder && !hasDisplayName) {
+            return false
+        }
+
         // If it has display_name.txt and exactly 1 subfolder that is a spine directory
-        if (File(dir, "display_name.txt").exists()) {
+        if (hasDisplayName) {
             val subDirs = files.filter { it.isDirectory && !it.name.startsWith(".") }
             if (subDirs.size == 1 && isSpineDirectory(subDirs.first())) {
                 return true

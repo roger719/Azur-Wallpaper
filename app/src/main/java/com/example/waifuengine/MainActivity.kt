@@ -5126,8 +5126,22 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                             modifier = Modifier.combinedClickable(
 
                                                                 onClick = {
-
-                                                                    currentSkelPath = preset.skelPath
+                                                                    var resolvedPath = preset.skelPath
+                                                                    if (!File(resolvedPath).exists() && allCharacters.isNotEmpty()) {
+                                                                        val matched = allCharacters.firstOrNull { char ->
+                                                                            char.name.equals(preset.name, ignoreCase = true) ||
+                                                                            char.name.equals(preset.selectedCharacterName, ignoreCase = true) ||
+                                                                            (char.folderPath.isNotEmpty() && preset.skelPath.contains(File(char.folderPath).name, ignoreCase = true))
+                                                                        }
+                                                                        val v = matched?.variants?.firstOrNull()
+                                                                        if (v != null) {
+                                                                            val candidate = v.modelJsonPath.ifEmpty { v.mocPath }
+                                                                            if (File(candidate).exists()) {
+                                                                                resolvedPath = candidate
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    currentSkelPath = resolvedPath
 
                                                                     currentScale = preset.scale
 
@@ -5137,7 +5151,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
 
 
-                                                                    prefs.skelPath = preset.skelPath
+                                                                    prefs.skelPath = resolvedPath
 
                                                                     prefs.scale = preset.scale
 

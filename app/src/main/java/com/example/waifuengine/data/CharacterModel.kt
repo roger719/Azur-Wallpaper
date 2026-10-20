@@ -61,16 +61,19 @@ object CharacterRepository {
         }
         if (hasDirectLive2D) return true
 
-        val subDirs = files.filter { it.isDirectory && !it.name.startsWith(".") }
+        val parent = dir.parentFile
+        val isDirectGameFolder = parent != null && parent.name.equals("CustomSkins", ignoreCase = true)
+        val hasDisplayName = File(dir, "display_name.txt").exists()
 
-        // Cas d'un dossier qui ne contient qu'un seul sous-dossier qui est un modèle Live2D
-        if (subDirs.size == 1 && isLive2DDirectory(subDirs.first()) && !isSpineDirectory(dir)) {
-            return true
+        // Un dossier directement sous CustomSkins sans display_name.txt est un dossier de jeu, JAMAIS un personnage
+        if (isDirectGameFolder && !hasDisplayName) {
+            return false
         }
 
         // Cas d'un dossier avec display_name.txt (dossier personnage créé à l'import ZIP ou au téléchargement Workshop)
-        if (File(dir, "display_name.txt").exists()) {
+        if (hasDisplayName) {
             if (!isSpineDirectory(dir)) {
+                val subDirs = files.filter { it.isDirectory && !it.name.startsWith(".") }
                 val skinSubDirs = subDirs.filter { isLive2DDirectory(it) || isSpineDirectory(it) }
                 // Si le dossier contient plusieurs personnages distincts en sous-dossiers, c'est un conteneur
                 if (skinSubDirs.size > 1) {
@@ -311,11 +314,12 @@ object CharacterRepository {
     fun flattenWrapperDirectory(dir: File) {
         if (!dir.isDirectory) return
         val dirName = dir.name
-        // Ne jamais aplatir la racine CustomSkins ni un dossier de jeu direct sous CustomSkins
+        // Ne jamais aplatir la racine CustomSkins
         if (dirName.equals("CustomSkins", ignoreCase = true)) return
         val parent = dir.parentFile ?: return
-        if (parent.name.equals("CustomSkins", ignoreCase = true)) {
-            // dir est un dossier de jeu direct (ex: CustomSkins/Azure Lane). Ne pas aplatir le dossier de jeu lui-même !
+        val hasDisplayName = File(dir, "display_name.txt").exists()
+        if (parent.name.equals("CustomSkins", ignoreCase = true) && !hasDisplayName) {
+            // dir est un dossier de jeu direct (ex: CustomSkins/Azur Lane). Ne pas aplatir le dossier de jeu lui-même !
             return
         }
 
@@ -329,6 +333,9 @@ object CharacterRepository {
             // Si le dossier ne contient qu'un seul élément et que cet élément est un sous-dossier
             if (nonSpecial.size == 1 && nonSpecial[0].isDirectory) {
                 val innerDir = nonSpecial[0]
+                // Si le sous-dossier a son propre display_name.txt, c'est un personnage distinct, ne pas l'aplatir !
+                if (File(innerDir, "display_name.txt").exists()) break
+
                 val innerFiles = innerDir.listFiles() ?: break
                 if (innerFiles.isEmpty()) break
 
