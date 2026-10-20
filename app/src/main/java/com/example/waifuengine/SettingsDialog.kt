@@ -560,6 +560,30 @@ fun SettingsDialog(
 
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(
+                                    text = if (strings.isEn) "• Performance & Rendering Controls" else "• Contrôles de Performances & Rendu",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = nothingTextPrimary
+                                )
+                                Text(
+                                    text = if (strings.isEn) "  New options: Framerate Limit (30/45/60/120 FPS), WebGL Antialiasing toggle, and Render Resolution scaling (50%/75%/100%)." else "  Nouvelles options : Limite FPS (30/45/60/120), anticrénelage WebGL et échelle de résolution (50%/75%/100%).",
+                                    fontSize = 9.sp,
+                                    color = nothingTextSecondary
+                                )
+
+                                Text(
+                                    text = if (strings.isEn) "• Auto-Detect PMA & Force PMA in Settings" else "• Détection Auto PMA & Forcer le Mode PMA",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = nothingTextPrimary
+                                )
+                                Text(
+                                    text = if (strings.isEn) "  Automatic PMA detection by game origin (Project QT, Bikini Girls, Nutaku) and manual override toggle moved to Settings." else "  Détection automatique selon l'origine du modèle (Project QT, Bikini Girls, Nutaku) et option manuelle dans les Paramètres.",
+                                    fontSize = 9.sp,
+                                    color = nothingTextSecondary
+                                )
+
+                                Text(
                                     text = if (strings.isEn) "• Spine Universal Alpha Mode (PMA vs Straight Alpha)" else "• Mode Alpha Universel Spine (PMA vs Straight Alpha)",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold,
