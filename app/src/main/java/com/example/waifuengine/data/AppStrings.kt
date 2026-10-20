@@ -60,7 +60,7 @@ class AppStrings(val lang: String) {
     val workshopTitle: String get() = "WORKSHOP"
     val workshopSubtitle: String get() = if (isEn) "Remote Spine & Live2D library" else "Bibliothèque Spine & Live2D distante"
     val repoConfig: String get() = if (isEn) "Repository Configuration" else "Configuration du dépôt"
-    val searchPlaceholder: String get() = if (isEn) "Search" else "recher"
+    val searchPlaceholder: String get() = if (isEn) "Search..." else "Rechercher..."
     val allFilter: String get() = if (isEn) "All" else "Tous"
     val skinsCount: String get() = if (isEn) "skins" else "skins"
     val viewDown: String get() = if (isEn) "View ↓" else "Voir ↓"

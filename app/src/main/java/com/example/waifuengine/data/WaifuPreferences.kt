@@ -88,12 +88,18 @@ class WaifuPreferences(private val context: Context) {
         set(value) = prefs.edit { putFloat(KEY_OFFSET_Y, value) }
 
     var selectedCharacterName: String
-        get() = prefs.getString(KEY_CHAR_NAME, "Compagnon") ?: "Compagnon"
+        get() = prefs.getString(KEY_CHAR_NAME, defaultCharacterNameFallback) ?: defaultCharacterNameFallback
         set(value) = prefs.edit { putString(KEY_CHAR_NAME, value) }
 
     var selectedVariantLabel: String
-        get() = prefs.getString(KEY_VARIANT_LABEL, "Skin Principal") ?: "Skin Principal"
+        get() = prefs.getString(KEY_VARIANT_LABEL, defaultVariantLabelFallback) ?: defaultVariantLabelFallback
         set(value) = prefs.edit { putString(KEY_VARIANT_LABEL, value) }
+
+    private val defaultCharacterNameFallback: String
+        get() = if (appLanguage == LANGUAGE_EN) "Companion" else "Compagnon"
+
+    private val defaultVariantLabelFallback: String
+        get() = if (appLanguage == LANGUAGE_EN) "Main Skin" else "Skin Principal"
 
     var wakeupAnimation: String
         get() = prefs.getString(KEY_WAKEUP_ANIM, "") ?: ""
@@ -148,7 +154,7 @@ class WaifuPreferences(private val context: Context) {
         set(value) = prefs.edit { putString(KEY_WORKSHOP_GITHUB_TOKEN, value) }
 
     var appLanguage: String
-        get() = prefs.getString(KEY_APP_LANGUAGE, "fr") ?: "fr"
+        get() = prefs.getString(KEY_APP_LANGUAGE, LANGUAGE_EN) ?: LANGUAGE_EN
         set(value) = prefs.edit { putString(KEY_APP_LANGUAGE, value) }
 
     var bgVideoPath: String
@@ -304,7 +310,7 @@ class WaifuPreferences(private val context: Context) {
                 list.add(
                     PresetItem(
                         id = obj.optString("id", "${System.currentTimeMillis()}"),
-                        name = obj.optString("name", "Préset"),
+                        name = obj.optString("name", if (appLanguage == LANGUAGE_EN) "Preset" else "Préset"),
                         skelPath = obj.optString("skelPath", ""),
                         scale = obj.optDouble("scale", 1.0).toFloat(),
                         offsetX = obj.optDouble("offsetX", 0.0).toFloat(),

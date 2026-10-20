@@ -548,13 +548,13 @@ fun WorkshopDialog(
                     return@launch
                 }
             }
-            val result = WorkshopManager.fetchWorkshopModels(url, prefs.workshopGithubToken, context)
+            val result = WorkshopManager.fetchWorkshopModels(url, prefs.workshopGithubToken, context, isEn = strings.isEn)
             isLoading = false
             result.onSuccess { models ->
                 workshopModels = models
                 errorMessage = null
             }.onFailure { err ->
-                errorMessage = err.message ?: "Erreur inconnue lors du chargement."
+                errorMessage = err.message ?: if (strings.isEn) "Unknown error while loading." else "Erreur inconnue lors du chargement."
             }
         }
     }

@@ -101,10 +101,16 @@ object WorkshopManager {
     suspend fun fetchWorkshopModels(
         repoUrl: String,
         token: String,
-        context: Context? = null
+        context: Context? = null,
+        isEn: Boolean = false
     ): Result<List<WorkshopModel>> = withContext(Dispatchers.IO) {
         val repoInfo = parseGitHubRepo(repoUrl)
-            ?: return@withContext Result.failure(IllegalArgumentException("Format d'URL GitHub invalide. Exemple : https://github.com/utilisateur/mon-depot"))
+            ?: return@withContext Result.failure(
+                IllegalArgumentException(
+                    if (isEn) "Invalid GitHub repository URL format. Example: https://github.com/user/my-repo"
+                    else "Format d'URL GitHub invalide. Exemple : https://github.com/utilisateur/mon-depot"
+                )
+            )
 
         val owner = repoInfo.first
         val repo = repoInfo.second
@@ -182,13 +188,17 @@ object WorkshopManager {
                 } else {
                     conn.disconnect()
                     if (responseCode == 401 || responseCode == 403) {
-                        return@withContext Result.failure(Exception("Accès refusé ($responseCode). Votre clé d'accès (token) a été rejetée par GitHub. Vérifiez sa validité et ses permissions."))
+                        val msg = if (isEn) "Access denied ($responseCode). Your access token was rejected by GitHub. Check its validity and scopes."
+                        else "Accès refusé ($responseCode). Votre clé d'accès (token) a été rejetée par GitHub. Vérifiez sa validité et ses permissions."
+                        return@withContext Result.failure(Exception(msg))
                     }
                     if (responseCode == 404 && b == branchesToTry.last()) {
                         val msg = if (cleanToken.isBlank()) {
-                            "Dépôt ou branche introuvable (404). S'il s'agit d'un dépôt privé, veuillez renseigner votre clé d'accès (PAT)."
+                            if (isEn) "Repository or branch not found (404). If it is a private repository, please configure your Personal Access Token (PAT)."
+                            else "Dépôt ou branche introuvable (404). S'il s'agit d'un dépôt privé, veuillez renseigner votre clé d'accès (PAT)."
                         } else {
-                            "Dépôt privé introuvable (404). Vérifiez l'URL et assurez-vous que votre token possède bien l'accès au dépôt."
+                            if (isEn) "Private repository not found (404). Check the URL and ensure your token has read access to the repository."
+                            else "Dépôt privé introuvable (404). Vérifiez l'URL et assurez-vous que votre token possède bien l'accès au dépôt."
                         }
                         return@withContext Result.failure(Exception(msg))
                     }
@@ -200,7 +210,9 @@ object WorkshopManager {
         }
 
         if (jsonText == null) {
-            return@withContext Result.failure(lastException ?: Exception("Impossible de contacter GitHub. Vérifiez votre connexion Internet."))
+            val defaultMsg = if (isEn) "Unable to connect to GitHub. Please check your internet connection."
+            else "Impossible de contacter GitHub. Vérifiez votre connexion Internet."
+            return@withContext Result.failure(lastException ?: Exception(defaultMsg))
         }
 
         try {

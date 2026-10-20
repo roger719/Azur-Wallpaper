@@ -502,8 +502,14 @@ class WaifuSpineWallpaperService : WallpaperService() {
             val timeStr = SimpleDateFormat(timePattern, Locale.getDefault()).format(now)
 
             if (prefs.isDateEnabled) {
-                val datePattern = if (prefs.dateFormat == WaifuPreferences.DATE_FORMAT_FULL) "d MMMM" else "d MMM"
-                val dateStr = SimpleDateFormat(datePattern, Locale.FRENCH).format(now)
+                val isEn = prefs.appLanguage == WaifuPreferences.LANGUAGE_EN
+                val clockLocale = if (isEn) Locale.ENGLISH else Locale.FRENCH
+                val datePattern = if (isEn) {
+                    if (prefs.dateFormat == WaifuPreferences.DATE_FORMAT_FULL) "MMMM d" else "MMM d"
+                } else {
+                    if (prefs.dateFormat == WaifuPreferences.DATE_FORMAT_FULL) "d MMMM" else "d MMM"
+                }
+                val dateStr = SimpleDateFormat(datePattern, clockLocale).format(now)
                 val fullText = "$timeStr\n$dateStr"
                 val spannable = SpannableString(fullText)
                 val dateStart = timeStr.length + 1

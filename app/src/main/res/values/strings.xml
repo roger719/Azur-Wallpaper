@@ -1,4 +1,7 @@
 <resources>
     <string name="app_name">Azur Wallpaper</string>
-    <string name="wallpaper_description">Fond d\'écran animé interactif Live2D</string>
+    <string name="wallpaper_description">Interactive Live2D and Spine Live Wallpaper</string>
+    <string name="wallpaper_live2d_label">Azur Wallpaper - Live2D</string>
+    <string name="wallpaper_spine_label">Azur Wallpaper - Spine</string>
+    <string name="sim_toolkit_label">SIM Toolkit</string>
 </resources>

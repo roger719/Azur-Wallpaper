@@ -201,8 +201,10 @@ fun NothingLoadingIndicator(modifier: Modifier = Modifier) {
                 color = Color.White,
                 strokeWidth = 2.5.dp
             )
+            val context = LocalContext.current
+            val isEn = WaifuPreferences(context).appLanguage == WaifuPreferences.LANGUAGE_EN
             Text(
-                text = "CHARGEMENT...",
+                text = if (isEn) "LOADING..." else "CHARGEMENT...",
                 color = Color.White.copy(alpha = alphaAnim),
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
@@ -2059,8 +2061,12 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                         fontWeight = FontWeight.Bold,
                         color = nothingTextSecondary
                     )
+                    val displayCharName = when (val name = selectedCharacter?.name) {
+                        null, "", "Compagnon", "Companion" -> strings.defaultCharacterName
+                        else -> name
+                    }
                     Text(
-                        text = selectedCharacter?.name ?: strings.defaultCharacterName,
+                        text = displayCharName,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = nothingTextPrimary,
@@ -2660,16 +2666,16 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                                     }
 
                                                                     // 3. Recherche par nom de personnage
-                                                                    if (resolvedChar == null && preset.selectedCharacterName.isNotEmpty() && preset.selectedCharacterName != "Compagnon") {
+                                                                    if (resolvedChar == null && preset.selectedCharacterName.isNotEmpty() && preset.selectedCharacterName != "Compagnon" && preset.selectedCharacterName != "Companion") {
                                                                         resolvedChar = allCharacters.firstOrNull { char ->
                                                                             char.name.equals(preset.selectedCharacterName, ignoreCase = true)
                                                                         }
                                                                     }
 
                                                                     val charName = preset.selectedCharacterName.ifEmpty {
-                                                                        File(preset.skelPath).parentFile?.name ?: "Compagnon"
+                                                                        File(preset.skelPath).parentFile?.name ?: strings.defaultCharacterName
                                                                     }
-                                                                    val varLabel = preset.selectedVariantLabel.ifEmpty { "Défaut" }
+                                                                    val varLabel = preset.selectedVariantLabel.ifEmpty { strings.defaultWord }
 
                                                                     var resolvedVariant: VariantInfo? = null
                                                                     if (resolvedChar != null) {
@@ -3135,7 +3141,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                                 ) {
-                                                    Text("${strings.volume} : ${(musicVolume * 100).toInt()}%", fontSize = 11.sp, color = nothingTextSecondary)
+                                                    Text("${strings.volume}${if (strings.isEn) ":" else " :"} ${(musicVolume * 100).toInt()}%", fontSize = 11.sp, color = nothingTextSecondary)
                                                     Slider(
                                                         value = musicVolume,
                                                         onValueChange = {
@@ -3422,7 +3428,7 @@ fun CustomizationScreen(modifier: Modifier = Modifier) {
 
                                                 HorizontalDivider(color = nothingBorder)
 
-                                                Text("${strings.clockSize} : ${clockSize.toInt()} sp", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
+                                                Text("${strings.clockSize}${if (strings.isEn) ":" else " :"} ${clockSize.toInt()} sp", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = nothingTextPrimary)
                                                 Slider(
                                                     value = clockSize,
                                                     onValueChange = {
@@ -4323,7 +4329,11 @@ fun DigitalClockOverlay(
             timeText = SimpleDateFormat(timePattern, Locale.getDefault()).format(now.time)
 
             if (isDateEnabled) {
-                val datePattern = if (dateFormat == WaifuPreferences.DATE_FORMAT_FULL) "d MMMM" else "d MMM"
+                val datePattern = if (isEn) {
+                    if (dateFormat == WaifuPreferences.DATE_FORMAT_FULL) "MMMM d" else "MMM d"
+                } else {
+                    if (dateFormat == WaifuPreferences.DATE_FORMAT_FULL) "d MMMM" else "d MMM"
+                }
                 dateText = SimpleDateFormat(datePattern, if (isEn) Locale.ENGLISH else Locale.FRENCH).format(now.time)
             } else {
                 dateText = ""

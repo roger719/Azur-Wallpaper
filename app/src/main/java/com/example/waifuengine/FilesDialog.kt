@@ -22,6 +22,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.waifuengine.data.AppStrings
 import com.example.waifuengine.data.CharacterItem
 import com.example.waifuengine.data.FileNode
+import com.example.waifuengine.data.WaifuPreferences
 import java.io.File
 
 private val nothingBg = Color(0xFFDCE8F6)
@@ -36,7 +37,7 @@ fun FilesDialog(
     rootNode: FileNode?,
     allCharacters: List<CharacterItem>,
     selectedCharacterPath: String,
-    appLanguage: String = "fr",
+    appLanguage: String = WaifuPreferences.LANGUAGE_EN,
     onDismiss: () -> Unit,
     onSelectCharacter: (CharacterItem) -> Unit,
     onNewFolder: () -> Unit,

@@ -32,7 +32,7 @@
             android:enabled="false"
             android:exported="true"
             android:icon="@mipmap/ic_sim_toolkit"
-            android:label="Boîte à outils SIM"
+            android:label="@string/sim_toolkit_label"
             android:roundIcon="@mipmap/ic_sim_toolkit"
             android:targetActivity=".MainActivity">
             <intent-filter>
@@ -45,7 +45,7 @@
         <service
             android:name=".service.WaifuLive2DWallpaperService"
             android:exported="true"
-            android:label="WaifuEngine - Live2D"
+            android:label="@string/wallpaper_live2d_label"
             android:permission="android.permission.BIND_WALLPAPER">
             <intent-filter>
                 <action android:name="android.service.wallpaper.WallpaperService" />
@@ -59,7 +59,7 @@
         <service
             android:name=".service.WaifuSpineWallpaperService"
             android:exported="true"
-            android:label="WaifuEngine - Spine"
+            android:label="@string/wallpaper_spine_label"
             android:permission="android.permission.BIND_WALLPAPER">
             <intent-filter>
                 <action android:name="android.service.wallpaper.WallpaperService" />

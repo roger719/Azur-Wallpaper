@@ -162,7 +162,7 @@ fun SettingsDialog(
                                         color = if (isFr) Color.White else nothingTextPrimary
                                     )
                                     Text(
-                                        text = if (strings.isEn) "French (Default)" else "Français (Par défaut)",
+                                        text = if (strings.isEn) "French" else "Français",
                                         fontSize = 9.sp,
                                         color = if (isFr) Color(0xFFD0D0D5) else nothingTextSecondary
                                     )
@@ -224,7 +224,7 @@ fun SettingsDialog(
                                         color = if (isEn) Color.White else nothingTextPrimary
                                     )
                                     Text(
-                                        text = if (strings.isEn) "English (International)" else "Anglais (International)",
+                                        text = if (strings.isEn) "English (Default)" else "Anglais (Par défaut)",
                                         fontSize = 9.sp,
                                         color = if (isEn) Color(0xFFD0D0D5) else nothingTextSecondary
                                     )

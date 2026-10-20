@@ -48,7 +48,7 @@ fun WallpaperPreviewBackground(
                     if (bitmap != null) {
                         Image(
                             bitmap = bitmap,
-                            contentDescription = "Fond d'écran",
+                            contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
                                 .fillMaxSize()
